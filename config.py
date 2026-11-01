@@ -39,22 +39,23 @@ ART_PROVIDER = os.getenv("ART_PROVIDER", "auto").lower()
 SD_WEBUI_URL = os.getenv("SD_WEBUI_URL", "http://127.0.0.1:7860").rstrip("/")
 COMFYUI_URL = os.getenv("COMFYUI_URL", "http://127.0.0.1:8188").rstrip("/")
 MANGA_LORA_TAG = os.getenv("MANGA_LORA_TAG", "<lora:baki_manga_style:0.85>")
-IMG2IMG_DENOISING = float(os.getenv("IMG2IMG_DENOISING", "0.62"))
+IMG2IMG_DENOISING = float(os.getenv("IMG2IMG_DENOISING", "0.68"))
+
 MANGA_NEGATIVE_PROMPT = os.getenv(
     "MANGA_NEGATIVE_PROMPT",
-    "color, pastel, 3d render, photorealistic, blurry, low contrast, soft lighting, watermark, text, deformed, bad anatomy",
+    "3D render, CGI, smooth skin, realistic photo, clean digital painting, colorful, underwear, soft lighting, bodybuilding pose, blurry, western comic",
 )
 
 # --- Parámetros de Edición de Impacto (FFmpeg) ---
-MAX_IMPACT_MOMENTS = int(os.getenv("MAX_IMPACT_MOMENTS", "3"))
-IMPACT_HOLD_SECONDS = float(os.getenv("IMPACT_HOLD_SECONDS", "1.15"))
+MAX_IMPACT_MOMENTS = int(os.getenv("MAX_IMPACT_MOMENTS", "1"))
+IMPACT_HOLD_SECONDS = float(os.getenv("IMPACT_HOLD_SECONDS", "0.8"))
 PHONK_VOLUME = float(os.getenv("PHONK_VOLUME", "0.42"))
-SFX_VOLUME = float(os.getenv("SFX_VOLUME", "0.95"))
-ORIGINAL_AUDIO_VOLUME = float(os.getenv("ORIGINAL_AUDIO_VOLUME", "0.65"))
+SFX_VOLUME = float(os.getenv("SFX_VOLUME", "1.0"))
+ORIGINAL_AUDIO_VOLUME = float(os.getenv("ORIGINAL_AUDIO_VOLUME", "0.75"))
 
 DEFAULT_CONTENT_STYLE = os.getenv(
     "DEFAULT_CONTENT_STYLE",
-    "Edición de impacto estilo Manga Seinen / Baki Hanma / Berserk: trazos de tinta negra agresivos, "
-    "sombreado dramático cross-hatching, líneas cinéticas de velocidad (speedlines), aura de combate intensa, "
-    "blanco y negro de ultra alto contraste en momentos de máxima tensión.",
+    "Gritty dark seinen manga battle panel, traditional Japanese ink drawing, rough black ink linework, "
+    "aggressive brush strokes, heavy cross-hatching, extreme chiaroscuro, intense shadows. "
+    "Style of Kentaro Miura (Berserk), Keisuke Itagaki (Baki the Grappler), and Yusuke Murata.",
 )

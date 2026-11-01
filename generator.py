@@ -1,13 +1,13 @@
 import asyncio
-import math
 import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
 import imageio_ffmpeg
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image
 
 from analyzer import VideoProposal
+from art_generator import extract_frame_at_timestamp, generate_manga_panel
 from audio_assets import ensure_default_audio_assets, get_phonk_track, get_sfx_files
 from config import (
     FRAMES_DIR,
@@ -18,7 +18,6 @@ from config import (
     SFX_VOLUME,
     STORYBOARDS_DIR,
 )
-from art_generator import extract_frame_at_timestamp, generate_manga_panel
 
 FPS = 30
 WIDTH = 720
@@ -26,7 +25,7 @@ HEIGHT = 1280
 
 
 def _probe_video_duration(video_path: Path) -> float:
-    """Obtiene la duración real del video usando ffprobe/ffmpeg."""
+    """Obtiene la duración real del video usando ffmpeg."""
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [ffmpeg_exe, "-i", str(video_path)]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -55,18 +54,30 @@ def _render_manga_impact_clip(
     hold_seconds: float = IMPACT_HOLD_SECONDS,
 ) -> Path:
     """
-    Crea un clip de video 9:16 (720x1280 @ 30fps) a partir de la imagen Manga/Baki con:
-    - 2 frames iniciales de Impact Flash (negativo / destello anime de choque)
-    - Zoom Punch agresivo (1.03x -> 1.18x)
-    - Camera Shake sísmico amortiguado (vibración X/Y de golpe en los primeros 0.45s)
-    - Pista de audio silenciosa base (para concatenación limpia con los segmentos del video)
+    Renderiza el panel Manga en un Corte Seco (Hard Cut) de 0.6s - 1.0s (por defecto 0.8s):
+    - Sin destellos de color ni alteraciones sobre el video real.
+    - Micro-zoom brusco del 100% al 108% de golpe al entrar el impacto.
+    - Screen Shake rápido (temblor seco de 5 cuadros iniciales) y luego cuadro fijo al 108%.
     """
+    hold_seconds = max(0.6, min(1.0, float(hold_seconds or 0.8)))
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    base_img = Image.open(panel_image_path).convert("RGB").resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
-    inverted_img = ImageOps.invert(base_img)
-    flash_img = ImageEnhance.Brightness(base_img).enhance(2.4)
+    base_img = (
+        Image.open(panel_image_path)
+        .convert("RGB")
+        .resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+    )
 
-    total_frames = max(15, int(round(hold_seconds * FPS)))
+    total_frames = max(18, int(round(hold_seconds * FPS)))
+
+    # Patrón exacto de 5 cuadros de Screen Shake seco al entrar el golpe (dx, dy en píxeles) + salto brusco 100% -> 108%
+    shake_offsets = [
+        (0, 0, 1.00),     # Cuadro 0: Entrada al 100%
+        (-18, 14, 1.08),  # Cuadro 1: Golpe brusco al 108% + sacudida
+        (16, -12, 1.08),  # Cuadro 2
+        (-12, -10, 1.08), # Cuadro 3
+        (9, 8, 1.08),     # Cuadro 4
+        (-5, 4, 1.08),    # Cuadro 5
+    ]
 
     cmd = [
         ffmpeg_exe,
@@ -94,7 +105,7 @@ def _render_manga_impact_clip(
         "-preset",
         "ultrafast",
         "-crf",
-        "20",
+        "19",
         "-pix_fmt",
         "yuv420p",
         "-c:a",
@@ -110,35 +121,37 @@ def _render_manga_impact_clip(
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     assert proc.stdin is not None
 
+    # Pre-calcular el cuadro fijo al 108% para los cuadros posteriores al temblor (frames 6..N)
+    steady_zoom = 1.08
+    steady_w = int(WIDTH / steady_zoom)
+    steady_h = int(HEIGHT / steady_zoom)
+    steady_left = (WIDTH - steady_w) // 2
+    steady_top = (HEIGHT - steady_h) // 2
+    steady_frame_bytes = (
+        base_img.crop((steady_left, steady_top, steady_left + steady_w, steady_top + steady_h))
+        .resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+        .tobytes()
+    )
+
     for idx in range(total_frames):
-        t = idx / FPS
-        if idx == 0:
-            frame = flash_img
-        elif idx == 1:
-            frame = inverted_img
+        if idx < len(shake_offsets):
+            dx, dy, zoom = shake_offsets[idx]
+            if zoom <= 1.001 and dx == 0 and dy == 0:
+                proc.stdin.write(base_img.tobytes())
+            else:
+                crop_w = int(WIDTH / zoom)
+                crop_h = int(HEIGHT / zoom)
+                max_ox = max(1, (WIDTH - crop_w) // 2)
+                max_oy = max(1, (HEIGHT - crop_h) // 2)
+                cx = WIDTH // 2 + max(-max_ox, min(max_ox, dx))
+                cy = HEIGHT // 2 + max(-max_oy, min(max_oy, dy))
+                left = max(0, min(WIDTH - crop_w, cx - crop_w // 2))
+                top = max(0, min(HEIGHT - crop_h, cy - crop_h // 2))
+                cropped = base_img.crop((left, top, left + crop_w, top + crop_h))
+                frame = cropped.resize((WIDTH, HEIGHT), Image.Resampling.BILINEAR)
+                proc.stdin.write(frame.tobytes())
         else:
-            # Zoom Punch rápido al inicio + avance lento dramático
-            zoom = 1.04 + 0.14 * (1.0 - math.exp(-t * 8.5)) + 0.03 * (t / max(0.5, hold_seconds))
-            # Sacudida de cámara (Camera Shake) fuerte en el impacto que se amortigua
-            shake_amp = 26.0 * math.exp(-t * 6.2)
-            dx = int(round(shake_amp * math.sin(idx * 2.45)))
-            dy = int(round(shake_amp * math.cos(idx * 3.15)))
-
-            crop_w = int(WIDTH / zoom)
-            crop_h = int(HEIGHT / zoom)
-            max_ox = max(1, (WIDTH - crop_w) // 2)
-            max_oy = max(1, (HEIGHT - crop_h) // 2)
-
-            cx = WIDTH // 2 + max(-max_ox, min(max_ox, dx))
-            cy = HEIGHT // 2 + max(-max_oy, min(max_oy, dy))
-
-            left = max(0, min(WIDTH - crop_w, cx - crop_w // 2))
-            top = max(0, min(HEIGHT - crop_h, cy - crop_h // 2))
-
-            cropped = base_img.crop((left, top, left + crop_w, top + crop_h))
-            frame = cropped.resize((WIDTH, HEIGHT), Image.Resampling.BILINEAR)
-
-        proc.stdin.write(frame.tobytes())
+            proc.stdin.write(steady_frame_bytes)
 
     proc.stdin.close()
     err_out = proc.stderr.read().decode("utf-8", errors="ignore") if proc.stderr else ""
@@ -156,12 +169,15 @@ def _extract_video_segment_9_16(
     output_seg_path: Path,
     has_audio: bool,
 ) -> Path:
-    """Extrae un corte del video original normalizado a 720x1280 (9:16), 30fps y audio 44.1kHz."""
+    """
+    Extrae el corte del video original en formato vertical 9:16 dejando la imagen del video real
+    100% limpia (sin líneas de velocidad ni alteraciones de color).
+    """
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    seg_dur = max(0.15, end_sec - start_sec)
+    seg_dur = max(0.12, end_sec - start_sec)
     vf = (
         f"fps={FPS},scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT},eq=contrast=1.06:saturation=1.08,format=yuv420p"
+        f"crop={WIDTH}:{HEIGHT},format=yuv420p"
     )
 
     if has_audio:
@@ -185,7 +201,7 @@ def _extract_video_segment_9_16(
             "-preset",
             "ultrafast",
             "-crf",
-            "22",
+            "21",
             "-c:a",
             "aac",
             "-b:a",
@@ -219,7 +235,7 @@ def _extract_video_segment_9_16(
             "-preset",
             "ultrafast",
             "-crf",
-            "22",
+            "21",
             "-c:a",
             "aac",
             "-b:a",
@@ -239,10 +255,10 @@ def _assemble_aura_edit_sync(
 ) -> Tuple[Path, str]:
     """
     Paso 5 del Pipeline: Ensamblado Automático (FFmpeg)
-      1. Corta el video original en los timestamps de clímax.
-      2. Inserta las imágenes Manga/Baki con Zoom Punch + Camera Shake + Impact Flash.
-      3. Monta la pista de música Phonk + SFX de golpe sincronizados al milisegundo exacto de cada corte.
-      4. Exporta el video final en vertical (9:16) .mp4 listo para entregar en Telegram y UI.
+      - Deja el video original completamente limpio.
+      - En cut_timestamp aplica un Corte Seco (Hard Cut) a la imagen Manga durante freeze_duration (0.6s-1.0s).
+      - Aplica Screen Shake rápido de 5 cuadros + Micro-Zoom brusco del 100% al 108%.
+      - Dispara el sonido seco de explosión / Phonk Bass Drop distorsionado exactamente en el corte.
     """
     ensure_default_audio_assets()
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -256,7 +272,6 @@ def _assemble_aura_edit_sync(
         key=lambda m: float(m.get("timestamp_sec", 0.0) or 0.0),
     )
 
-    # Si no hubiera momentos cargados, crear uno a mitad del video
     if not moments:
         mid = round(total_duration * 0.5, 2)
         f_path = FRAMES_DIR / f"{job_id}_p1_frame.jpg"
@@ -267,36 +282,38 @@ def _assemble_aura_edit_sync(
             {
                 "index": 1,
                 "timestamp_sec": mid,
+                "freeze_duration": IMPACT_HOLD_SECONDS,
                 "storyboard_image_path": str(p_path),
-                "sfx_type": "hit",
+                "sfx_type": "bass_drop",
                 "art_engine": eng,
             }
         ]
 
     segment_files: List[Path] = []
-    impact_Insertion_times_ms: List[Tuple[int, str]] = []
+    impact_insertion_times_ms: List[int] = []
 
     cursor_sec = 0.0
     accumulated_timeline_sec = 0.0
-    hold_sec = IMPACT_HOLD_SECONDS
 
     for i, m in enumerate(moments, start=1):
         ts = float(m.get("timestamp_sec", 1.0))
-        ts = max(cursor_sec + 0.25, min(ts, total_duration - 0.2))
+        ts = max(cursor_sec + 0.20, min(ts, total_duration - 0.15))
         if ts <= cursor_sec:
             continue
 
-        # 1. Segmento del video original desde cursor_sec hasta el timestamp de clímax
+        freeze_sec = max(0.6, min(1.0, float(m.get("freeze_duration", IMPACT_HOLD_SECONDS) or 0.8)))
+
+        # 1. Segmento limpio del video original hasta cut_timestamp
         vid_seg = OUTPUTS_DIR / f"{job_id}_seg_{i}_vid.mp4"
         _extract_video_segment_9_16(source_video_path, cursor_sec, ts, vid_seg, has_audio)
         segment_files.append(vid_seg)
         accumulated_timeline_sec += (ts - cursor_sec)
 
-        # 2. Registrar el milisegundo exacto donde estalla el panel Manga para el SFX de golpe
-        impact_start_ms = max(0, int(round(accumulated_timeline_sec * 1000)) - 35)
-        impact_Insertion_times_ms.append((impact_start_ms, m.get("sfx_type", "hit")))
+        # 2. Milisegundo exacto del Hard Cut para el Phonk Bass Drop
+        impact_start_ms = max(0, int(round(accumulated_timeline_sec * 1000)))
+        impact_insertion_times_ms.append(impact_start_ms)
 
-        # 3. Verificar que exista el panel Manga (regenerarlo si fue borrado)
+        # 3. Verificar panel Manga
         panel_path = Path(m.get("storyboard_image_path", ""))
         if not panel_path.exists():
             f_path = FRAMES_DIR / f"{job_id}_p{i}_frame.jpg"
@@ -304,22 +321,22 @@ def _assemble_aura_edit_sync(
             extract_frame_at_timestamp(source_video_path, ts, f_path)
             generate_manga_panel(f_path, m.get("manga_prompt", ""), panel_path)
 
-        # 4. Renderizar el clip de impacto con Flash + Zoom Punch + Camera Shake
+        # 4. Clip del Hard Cut con Screen Shake (5 frames) + Micro-Zoom (100% -> 108%)
         imp_clip = OUTPUTS_DIR / f"{job_id}_seg_{i}_impact.mp4"
-        _render_manga_impact_clip(panel_path, imp_clip, hold_sec)
+        _render_manga_impact_clip(panel_path, imp_clip, freeze_sec)
         segment_files.append(imp_clip)
-        accumulated_timeline_sec += hold_sec
+        accumulated_timeline_sec += freeze_sec
 
         cursor_sec = ts
 
-    # 5. Segmento final del video después del último impacto
-    if cursor_sec < total_duration - 0.2:
+    # 5. Resto del video limpio después del corte
+    if cursor_sec < total_duration - 0.15:
         tail_seg = OUTPUTS_DIR / f"{job_id}_seg_tail.mp4"
         _extract_video_segment_9_16(source_video_path, cursor_sec, total_duration, tail_seg, has_audio)
         segment_files.append(tail_seg)
         accumulated_timeline_sec += (total_duration - cursor_sec)
 
-    # 6. Concatenar todos los segmentos de video + impacto
+    # 6. Concatenar todos los segmentos
     concat_list_file = OUTPUTS_DIR / f"{job_id}_concat.txt"
     concat_lines = [f"file '{p.resolve().as_posix()}'" for p in segment_files]
     concat_list_file.write_text("\n".join(concat_lines), encoding="utf-8")
@@ -344,11 +361,13 @@ def _assemble_aura_edit_sync(
     if proc_c.returncode != 0:
         raise RuntimeError(f"Error concatenando timeline: {proc_c.stderr}")
 
-    # 7. Montaje de Audio Phonk + SFX de golpe sincronizados en cada corte
+    # 7. Montaje de Audio: Video original + Phonk de fondo + Phonk Bass Drop en el Hard Cut
     phonk_track = get_phonk_track()
     sfx_files = get_sfx_files()
-    hit_sfx = next((p for p in sfx_files if "hit" in p.name.lower()), sfx_files[0])
-    slash_sfx = next((p for p in sfx_files if "slash" in p.name.lower()), hit_sfx)
+    bass_drop_sfx = next(
+        (p for p in sfx_files if "bass_drop" in p.name.lower()),
+        sfx_files[0],
+    )
 
     final_video_path = OUTPUTS_DIR / f"{job_id}_final.mp4"
 
@@ -363,24 +382,23 @@ def _assemble_aura_edit_sync(
 
     filter_parts = [
         f"[0:a]volume={ORIGINAL_AUDIO_VOLUME:.2f}[orig_a]",
-        f"[1:a]volume={PHONK_VOLUME:.2f},afade=t=in:st=0:d=0.4[phonk_a]",
+        f"[1:a]volume={PHONK_VOLUME:.2f},afade=t=in:st=0:d=0.3[phonk_a]",
     ]
     mix_labels = ["[orig_a]", "[phonk_a]"]
 
-    for idx, (delay_ms, sfx_kind) in enumerate(impact_Insertion_times_ms):
-        sfx_Input_idx = idx + 2
-        chosen_sfx = slash_sfx if sfx_kind == "slash" else hit_sfx
-        inputs_args.extend(["-i", str(chosen_sfx)])
+    for idx, delay_ms in enumerate(impact_insertion_times_ms):
+        sfx_input_idx = idx + 2
+        inputs_args.extend(["-i", str(bass_drop_sfx)])
         lbl = f"[sfx_{idx}]"
         filter_parts.append(
-            f"[{sfx_Input_idx}:a]volume={SFX_VOLUME:.2f},adelay={delay_ms}|{delay_ms}{lbl}"
+            f"[{sfx_input_idx}:a]volume={SFX_VOLUME:.2f},adelay={delay_ms}|{delay_ms}{lbl}"
         )
         mix_labels.append(lbl)
 
     num_audio_streams = len(mix_labels)
     filter_parts.append(
         f"{''.join(mix_labels)}amix=inputs={num_audio_streams}:duration=first:dropout_transition=0,"
-        "alimiter=limit=0.95[final_a]"
+        "alimiter=limit=0.96[final_a]"
     )
     filter_complex = ";".join(filter_parts)
 
@@ -408,17 +426,17 @@ def _assemble_aura_edit_sync(
 
     proc_m = subprocess.run(cmd_mix, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if proc_m.returncode != 0:
-        raise RuntimeError(f"Error mezclando audio Phonk + SFX: {proc_m.stderr}")
+        raise RuntimeError(f"Error mezclando audio Phonk + Bass Drop: {proc_m.stderr}")
 
-    # Limpieza de archivos temporales de segmentos
     for temp_p in [*segment_files, concat_list_file, concat_video_path]:
         try:
             temp_p.unlink(missing_ok=True)
         except Exception:
             pass
 
-    art_engine = moments[0].get("art_engine", "Manga Engine")
-    engine_summary = f"{art_engine} + {len(moments)} Cortes Zoom/Shake + Phonk/SFX (9:16)"
+    art_engine = moments[0].get("art_engine", "Seinen Manga Engine")
+    freeze_val = moments[0].get("freeze_duration", IMPACT_HOLD_SECONDS)
+    engine_summary = f"{art_engine} | Hard Cut ({freeze_val}s) + 108% Zoom/Shake + Phonk Bass Drop"
     return final_video_path, engine_summary
 
 

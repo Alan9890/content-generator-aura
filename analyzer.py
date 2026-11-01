@@ -9,13 +9,16 @@ from typing import Any, Dict, List, Optional
 from google import genai
 from google.genai import types
 
-from art_generator import extract_frame_at_timestamp, generate_manga_panel
+from art_generator import (
+    build_seinen_master_prompt,
+    extract_frame_at_timestamp,
+    generate_manga_panel,
+)
 from config import (
-    DEFAULT_CONTENT_STYLE,
     FRAMES_DIR,
     GEMINI_API_KEY,
     GEMINI_ANALYSIS_MODEL,
-    MAX_IMPACT_MOMENTS,
+    IMPACT_HOLD_SECONDS,
     STORYBOARDS_DIR,
 )
 from downloader import DownloadedVideo
@@ -33,7 +36,26 @@ def format_timestamp(sec: float) -> str:
     sec = max(0.0, float(sec))
     mins = int(sec // 60)
     rem = sec - (mins * 60)
-    return f"{mins:02d}:{rem:04.1f}"
+    return f"{mins:02d}:{rem:05.2f}"
+
+
+def parse_timestamp_to_seconds(val: Any) -> float:
+    if isinstance(val, (int, float)):
+        return max(0.0, float(val))
+    s = str(val or "0").strip()
+    if ":" in s:
+        parts = s.split(":")
+        try:
+            if len(parts) == 2:
+                return int(parts[0]) * 60.0 + float(parts[1])
+            if len(parts) == 3:
+                return int(parts[0]) * 3600.0 + int(parts[1]) * 60.0 + float(parts[2])
+        except Exception:
+            return 0.0
+    try:
+        return max(0.0, float(s))
+    except Exception:
+        return 0.0
 
 
 @dataclass
@@ -41,10 +63,11 @@ class ImpactMoment:
     index: int
     timestamp_sec: float
     timestamp_label: str
+    freeze_duration: float
     moment_title: str
     subjects_action: str
     manga_prompt: str
-    sfx_type: str = "hit"
+    sfx_type: str = "bass_drop"
     source_frame_path: str = ""
     storyboard_image_path: str = ""
     storyboard_url: str = ""
@@ -71,23 +94,24 @@ class VideoProposal:
         for m in self.impact_moments:
             idx = m.get("index", 1)
             ts = m.get("timestamp_label") or format_timestamp(m.get("timestamp_sec", 0))
-            title = m.get("moment_title", "Clímax")
+            freeze = float(m.get("freeze_duration", IMPACT_HOLD_SECONDS))
             action = m.get("subjects_action", "")
+            prompt_txt = m.get("manga_prompt", "")
             eng = m.get("art_engine", "Manga Engine")
             moments_lines.append(
-                f"  ⚡ <b>Panel #{idx} [{ts}] — {title}:</b>\n"
-                f"      <i>{action}</i>\n"
-                f"      🎨 Motor: <code>{eng}</code>"
+                f"  ⚡ <b>Corte #{idx} en <code>{ts}</code> (Freeze: <code>{freeze:.2f}s</code>)</b>\n"
+                f"      🥊 <b>Acción:</b> <i>{action}</i>\n"
+                f"      🖋️ <b>Prompt Seinen:</b> <code>{prompt_txt[:220]}...</code>\n"
+                f"      🎨 <b>Motor:</b> <code>{eng}</code>"
             )
         moments_block = "\n\n".join(moments_lines) or "  • Sin paneles generados"
 
         return (
-            f"🔥 <b>STORYBOARD MANGA / AURA EDIT ({self.platform})</b>\n"
+            f"🔥 <b>STORYBOARD SEINEN / BAKI IMPACT ({self.platform})</b>\n"
             f"🆔 Job: <code>{self.job_id}</code>\n\n"
-            f"📌 <b>Título:</b> {self.new_title}\n\n"
-            f"🥊 <b>Sujetos y Roles Identificados:</b>\n{self.subjects_and_roles}\n\n"
-            f"🔍 <b>Análisis de Tensión / Clímax:</b>\n{self.original_analysis}\n\n"
-            f"⏱️ <b>Timestamps de Impacto y Storyboards:</b>\n{moments_block}\n\n"
+            f"📌 <b>Título:</b> {self.new_title}\n"
+            f"🥊 <b>Acción Detectada:</b> {self.subjects_and_roles}\n\n"
+            f"⏱️ <b>Momento Exacto de Impacto:</b>\n{moments_block}\n\n"
             f"📲 <b>Copy Sugerido:</b>\n{self.social_caption}"
         )
 
@@ -132,126 +156,93 @@ def _generate_with_fallback(client: genai.Client, contents, config: types.Genera
     raise last_err
 
 
-def _generate_storyboards_for_moments(
+def _build_single_moment_storyboard(
     job_id: str,
     video_path: Path,
-    raw_moments: List[Dict[str, Any]],
-    duration: float,
+    cut_sec: float,
+    freeze_dur: float,
+    action_desc: str,
+    img_prompt: str,
+    video_duration: float,
 ) -> List[Dict[str, Any]]:
-    """
-    Ejecuta el Paso 3 para cada timestamp detectado:
-    1. Extrae el frame real del video en ese segundo exacto.
-    2. Genera la ilustración estilo Manga/Seinen/Baki (Local GPU A1111/ComfyUI -> Gemini/Flux -> Seinen Ink).
-    """
-    safe_duration = max(3.0, float(duration or 10.0))
-    enriched: List[Dict[str, Any]] = []
+    safe_dur = max(2.0, float(video_duration or 8.0))
+    if cut_sec <= 0.1 or cut_sec >= safe_dur - 0.25:
+        cut_sec = round(safe_dur * 0.52, 2)
 
-    for i, m in enumerate(raw_moments[:MAX_IMPACT_MOMENTS], start=1):
-        raw_ts = float(m.get("timestamp_sec", 0.0) or 0.0)
-        # Asegurar que el timestamp caiga dentro del rango válido del video
-        if raw_ts <= 0.1 or raw_ts >= safe_duration - 0.3:
-            raw_ts = round((safe_duration * i) / (len(raw_moments[:MAX_IMPACT_MOMENTS]) + 1), 2)
+    freeze_dur = max(0.6, min(1.0, float(freeze_dur or 0.8)))
+    ts_label = format_timestamp(cut_sec)
 
-        ts_label = format_timestamp(raw_ts)
-        frame_file = FRAMES_DIR / f"{job_id}_p{i}_frame.jpg"
-        panel_file = STORYBOARDS_DIR / f"{job_id}_p{i}_manga.jpg"
+    frame_file = FRAMES_DIR / f"{job_id}_p1_frame.jpg"
+    panel_file = STORYBOARDS_DIR / f"{job_id}_p1_manga.jpg"
 
-        extract_frame_at_timestamp(video_path, raw_ts, frame_file)
-        manga_prompt = m.get("manga_prompt") or (
-            "Extreme close-up manga impact frame, Baki Hanma and Berserk style, intense menacing aura, "
-            "heavy black ink cross-hatching, radial speedlines"
-        )
-        _, engine_used = generate_manga_panel(
-            source_frame_path=frame_file,
-            manga_prompt=manga_prompt,
-            output_panel_path=panel_file,
-            seed=-1,
-        )
+    extract_frame_at_timestamp(video_path, cut_sec, frame_file)
+    _, engine_used = generate_manga_panel(
+        source_frame_path=frame_file,
+        manga_prompt=img_prompt,
+        output_panel_path=panel_file,
+        seed=-1,
+    )
 
-        impact = ImpactMoment(
-            index=i,
-            timestamp_sec=round(raw_ts, 2),
-            timestamp_label=ts_label,
-            moment_title=m.get("moment_title") or f"Impacto #{i}",
-            subjects_action=m.get("subjects_action") or "Momento de máxima tensión y enfrentamiento",
-            manga_prompt=manga_prompt,
-            sfx_type=m.get("sfx_type") if m.get("sfx_type") in ("hit", "slash") else ("hit" if i % 2 == 1 else "slash"),
-            source_frame_path=str(frame_file),
-            storyboard_image_path=str(panel_file),
-            storyboard_url=f"/media/storyboards/{panel_file.name}",
-            source_frame_url=f"/media/frames/{frame_file.name}",
-            art_engine=engine_used,
-        )
-        enriched.append(asdict(impact))
-
-    return enriched
+    impact = ImpactMoment(
+        index=1,
+        timestamp_sec=round(cut_sec, 2),
+        timestamp_label=ts_label,
+        freeze_duration=round(freeze_dur, 2),
+        moment_title=f"Hard Cut @ {ts_label} ({freeze_dur:.1f}s)",
+        subjects_action=action_desc,
+        manga_prompt=img_prompt,
+        sfx_type="bass_drop",
+        source_frame_path=str(frame_file),
+        storyboard_image_path=str(panel_file),
+        storyboard_url=f"/media/storyboards/{panel_file.name}",
+        source_frame_url=f"/media/frames/{frame_file.name}",
+        art_engine=engine_used,
+    )
+    return [asdict(impact)]
 
 
 def _build_draft_proposal(video: DownloadedVideo, reason: str = "") -> VideoProposal:
-    dur = max(4.0, float(video.duration or 9.0))
-    t1 = round(dur * 0.28, 2)
-    t2 = round(dur * 0.62, 2)
-    t3 = round(dur * 0.85, 2)
-
-    raw_moments = [
-        {
-            "timestamp_sec": t1,
-            "moment_title": "Inicio de Tensión / Guardia",
-            "subjects_action": "Los sujetos entran en zona de confrontación con postura amenazante.",
-            "manga_prompt": (
-                f"Dramatic manga panel inspired by '{video.title}', two opponents facing off, "
-                "Keisuke Itagaki Baki style, intense dark aura, heavy black ink, radial speedlines"
-            ),
-            "sfx_type": "hit",
-        },
-        {
-            "timestamp_sec": t2,
-            "moment_title": "Choque Principal / Impacto",
-            "subjects_action": "Movimiento brusco de ataque o reacción de máxima tensión.",
-            "manga_prompt": (
-                f"Extreme impact frame inspired by '{video.title}', explosive motion, Berserk and Baki manga style, "
-                "fierce eyes, shockwave lines, ultra high contrast monochrome ink"
-            ),
-            "sfx_type": "slash",
-        },
-        {
-            "timestamp_sec": t3,
-            "moment_title": "Clímax Final / Dominio",
-            "subjects_action": "Postura dominante final en el clímax del video.",
-            "manga_prompt": (
-                f"Final climax manga panel inspired by '{video.title}', overwhelming menacing aura, "
-                "Vagabond and Baki heavy brush ink, dramatic shadows, screentone"
-            ),
-            "sfx_type": "hit",
-        },
-    ]
-
-    moments = _generate_storyboards_for_moments(
-        video.job_id, video.file_path, raw_moments[:MAX_IMPACT_MOMENTS], dur
+    dur = max(3.0, float(video.duration or 8.0))
+    cut_sec = round(dur * 0.50, 2)
+    action_desc = f"Clímax físico e impacto principal detectado en '{video.title}'"
+    img_prompt = (
+        "Gritty black and white manga drawing, ink on paper, heavy cross-hatching, Baki artstyle. "
+        "A menacing hyper-muscular combat monster in an aggressive dynamic low-angle pose replicating the exact impact frame, "
+        "hyper-vascular muscles, glowing pupil-less eyes, black combat aura radiating, impact shockwave, "
+        "speed lines radiating outward, raw sketch, extreme contrast."
     )
-    scenes = [
-        {
-            "visual": f"[{m['timestamp_label']}] {m['moment_title']} — {m['manga_prompt']}",
-            "narration": m["subjects_action"],
-        }
-        for m in moments
-    ]
+
+    moments = _build_single_moment_storyboard(
+        video.job_id, video.file_path, cut_sec, 0.8, action_desc, img_prompt, dur
+    )
+    m0 = moments[0]
     note = f" ({reason})" if reason else ""
 
     return VideoProposal(
         job_id=video.job_id,
         source_url=video.url,
         platform=video.platform,
-        original_analysis=(
-            f"Video de {video.platform} ('{video.title}', {dur:.1f}s) analizado para edición de impacto Manga/Seinen.{note}"
+        original_analysis=f"Corte seco programado en {m0['timestamp_label']} (freeze: {m0['freeze_duration']}s). {action_desc}{note}",
+        subjects_and_roles=action_desc,
+        new_title=f"{video.title[:45]} — BAKI / SEINEN EDIT",
+        voiceover_script=json.dumps(
+            {
+                "cut_timestamp": m0["timestamp_label"],
+                "freeze_duration": m0["freeze_duration"],
+                "action_description": action_desc,
+                "image_generation_prompt": img_prompt,
+            },
+            ensure_ascii=False,
+            indent=2,
         ),
-        subjects_and_roles=f"Sujetos principales detectados en '{video.title}' en dinámica de tensión/enfrentamiento.",
-        new_title=f"{video.title[:45]} — MANGA AURA EDIT",
-        voiceover_script=f"Sujetos y roles: {video.title}. Timestamps de impacto: "
-        + ", ".join(m["timestamp_label"] for m in moments),
-        visual_prompt=moments[0]["manga_prompt"] if moments else "",
-        scenes=scenes,
-        social_caption=f"🔥 {video.title} (Manga Aura Edit)\n\n#aura #mangaedit #baki #seinen #phonk #shorts #reels",
+        visual_prompt=build_seinen_master_prompt(img_prompt),
+        scenes=[
+            {
+                "visual": f"[{m0['timestamp_label']}] Freeze {m0['freeze_duration']}s ({m0['art_engine']})",
+                "narration": action_desc,
+            }
+        ],
+        social_caption=f"🔥 {video.title}\n\n#baki #berserk #seinen #mangaedit #phonk #aura #shorts",
         impact_moments=moments,
     )
 
@@ -260,15 +251,9 @@ def analyze_and_create_proposal(
     video: DownloadedVideo, custom_instructions: str = ""
 ) -> VideoProposal:
     """
-    Paso 2 y Paso 3 del Pipeline:
-    1. Sube el video a Gemini y realiza el Análisis Multimodal:
-       - Extrae timestamps exactos de clímax / tensión
-       - Identifica sujetos y roles (ej. cangrejo vs figura)
-       - Genera prompts de imagen estilo manga/seinen (Baki / Berserk)
-    2. Extrae los frames reales en esos timestamps y genera los paneles de arte Manga/Baki.
+    Paso 2 y Paso 3 del Pipeline usando el prompt exacto de Director de Animación de Anime/Manga (Baki, Berserk, Kengan Ashura).
     """
-    style_guide = custom_instructions.strip() or DEFAULT_CONTENT_STYLE
-    dur = max(3.0, float(video.duration or 10.0))
+    dur = max(2.0, float(video.duration or 8.0))
 
     if not GEMINI_API_KEY or GEMINI_API_KEY == "tu_gemini_api_key_aqui":
         return _build_draft_proposal(video)
@@ -285,87 +270,96 @@ def analyze_and_create_proposal(
         if uploaded_file.state.name == "FAILED":
             raise RuntimeError("Error al procesar el video en Gemini File API.")
 
-        prompt = f"""
-Analiza multimodalmente este video de {video.platform} (Título: "{video.title}", Duración: {dur:.1f} segundos).
-Estamos creando un "Manga / Seinen Aura Impact Edit" (estilo Baki Hanma / Berserk / Vagabond con música Phonk y cortes de impacto).
-Directriz de estilo del usuario: "{style_guide}"
+        extra_note = (
+            f"\nNota adicional del usuario: {custom_instructions.strip()}\n"
+            if custom_instructions.strip()
+            else ""
+        )
 
-Tu tarea:
-1. Identifica claramente los SUJETOS Y ROLES en el video (por ejemplo: "Cangrejo en postura defensiva con tenazas levantadas vs Figura humana desafiante", o quién es el atacante/defensor/protagonista).
-2. Encuentra exactamente {MAX_IMPACT_MOMENTS} TIMESTAMPS CLAVE (en segundos con decimales, dentro del rango 0.3 a {max(1.0, dur - 0.4):.1f}) donde ocurra el mayor clímax, tensión, golpe, giro brusco o mirada intimidante.
-3. Para cada timestamp, diseña un prompt de imagen en inglés estilo Manga Seinen (Keisuke Itagaki Baki style / Kentaro Miura Berserk style, monochrome black and white ink, extreme muscular/anatomical tension, radial speedlines, menacing aura) que represente exactamente a los sujetos de ese frame en versión manga épico.
+        prompt = f"""Actúa como un director de animación de anime y manga de peleas extremas (estilo Baki, Berserk, Kengan Ashura). Tu tarea es analizar el video proporcionado (duración total: {dur:.2f} segundos) y encontrar el momento exacto de impacto o tensión física para transformar la escena en un panel de manga ultra dramático.{extra_note}
 
-Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:
+Instrucciones de análisis:
+1. Detecta el fotograma exacto donde se lanza el golpe más potente, la mirada más intimidante o el clímax físico.
+2. Identifica la pose y acción del sujeto en ese instante.
+3. Transforma mentalmente al sujeto en un monstruo de combate hipertrofiado, amenazante y cubierto de aura asesina.
+
+Devuelve estrictamente un objeto JSON con este formato:
 {{
-  "original_analysis": "Resumen de 2-3 líneas sobre la tensión del video y por qué estos momentos funcionan para un edit de impacto.",
-  "subjects_and_roles": "Descripción clara de los sujetos en escena y el rol de cada uno (ej. Sujeto A: Cangrejo agresivo [Amenaza] vs Sujeto B: Figura gigante [Retador]).",
-  "new_title": "Título épico para el edit (ej. CANGREJO VS TITÁN — BAKI AURA EDIT)",
-  "impact_moments": [
-    {{
-      "timestamp_sec": 2.3,
-      "moment_title": "Nombre corto del clímax (ej. Guardia de Tenazas / Choque de Miradas)",
-      "subjects_action": "Qué hacen exactamente los sujetos en este segundo exacto",
-      "manga_prompt": "Detailed English prompt for Flux Schnell / SDXL + Baki Manga LoRA describing the exact subjects and pose in this frame in monochrome high-contrast Seinen manga style, heavy ink cross-hatching, menacing aura, action speedlines, 9:16 vertical",
-      "sfx_type": "hit"
-    }}
-  ],
-  "social_caption": "Caption corto y potente listo para TikTok / Reels / Shorts con hashtags #mangaedit #baki #phonk #aura"
-}}
-"""
+  "cut_timestamp": "00:00.00",
+  "freeze_duration": 0.8,
+  "action_description": "Breve descripción del movimiento detectado",
+  "image_generation_prompt": "Gritty black and white manga drawing, ink on paper, heavy cross-hatching, Baki artstyle. [Describir al sujeto replicando exactamente la pose en ángulo dinámico o contra-picado], hyper-vascular muscles, glowing pupil-less eyes, black combat aura radiating, impact shockwave, speed lines radiating outward, raw sketch, extreme contrast."
+}}"""
 
         response = _generate_with_fallback(
             client=client,
             contents=[uploaded_file, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.65,
+                temperature=0.6,
             ),
         )
 
         data = json.loads(response.text)
-        raw_moments = data.get("impact_moments") or []
-        if not raw_moments:
-            return _build_draft_proposal(video)
+        if isinstance(data, list) and data:
+            data = data[0]
 
-        # Ordenar momentos cronológicamente
-        raw_moments.sort(key=lambda x: float(x.get("timestamp_sec", 0.0) or 0.0))
-
-        # Paso 3: Generar los paneles de arte Manga/Baki a partir de los frames reales
-        moments = _generate_storyboards_for_moments(
-            video.job_id, video.file_path, raw_moments, dur
+        cut_sec = parse_timestamp_to_seconds(data.get("cut_timestamp", "00:02.00"))
+        freeze_dur = float(data.get("freeze_duration", 0.8) or 0.8)
+        freeze_dur = max(0.6, min(1.0, freeze_dur))
+        action_desc = data.get("action_description") or "Momento exacto de impacto y tensión física"
+        img_prompt = data.get("image_generation_prompt") or (
+            "Gritty black and white manga drawing, ink on paper, heavy cross-hatching, Baki artstyle. "
+            "A menacing hyper-muscular fighter in a dynamic low-angle pose, hyper-vascular muscles, "
+            "glowing pupil-less eyes, black combat aura radiating, impact shockwave, speed lines radiating outward, raw sketch, extreme contrast."
         )
 
-        scenes = [
-            {
-                "visual": f"[{m['timestamp_label']}] {m['moment_title']} ({m['art_engine']})",
-                "narration": f"{m['subjects_action']} | Prompt: {m['manga_prompt']}",
-            }
-            for m in moments
-        ]
-        subjects_roles = data.get("subjects_and_roles", "Sujetos principales en confrontación.")
-        summary_script = f"Sujetos: {subjects_roles}\n" + "\n".join(
-            [f"[{m['timestamp_label']}] {m['moment_title']}: {m['subjects_action']}" for m in moments]
+        moments = _build_single_moment_storyboard(
+            video.job_id,
+            video.file_path,
+            cut_sec,
+            freeze_dur,
+            action_desc,
+            img_prompt,
+            dur,
         )
-        combined_prompts = "\n\n".join(
-            [f"[Panel #{m['index']} @ {m['timestamp_label']}] {m['manga_prompt']}" for m in moments]
+        m0 = moments[0]
+
+        analysis_summary = (
+            f"Cut Timestamp: {m0['timestamp_label']} | Freeze Duration: {m0['freeze_duration']}s\n"
+            f"Movimiento detectado: {action_desc}"
         )
 
         return VideoProposal(
             job_id=video.job_id,
             source_url=video.url,
             platform=video.platform,
-            original_analysis=data.get("original_analysis", ""),
-            subjects_and_roles=subjects_roles,
-            new_title=data.get("new_title", "Nuevo Manga Aura Edit"),
-            voiceover_script=summary_script,
-            visual_prompt=combined_prompts,
-            scenes=scenes,
-            social_caption=data.get("social_caption", "#mangaedit #baki #phonk #aura"),
+            original_analysis=analysis_summary,
+            subjects_and_roles=action_desc,
+            new_title=f"{video.title[:45]} — SEINEN IMPACT EDIT",
+            voiceover_script=json.dumps(
+                {
+                    "cut_timestamp": m0["timestamp_label"],
+                    "freeze_duration": m0["freeze_duration"],
+                    "action_description": action_desc,
+                    "image_generation_prompt": img_prompt,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            visual_prompt=build_seinen_master_prompt(img_prompt),
+            scenes=[
+                {
+                    "visual": f"[{m0['timestamp_label']}] Freeze {m0['freeze_duration']}s ({m0['art_engine']})",
+                    "narration": action_desc,
+                }
+            ],
+            social_caption=f"🔥 {video.title}\n\n#baki #berserk #kenganashura #seinen #mangaedit #phonk #shorts",
             impact_moments=moments,
         )
     except Exception as exc:
         print(f"[Analyzer] Fallback activado ({exc}), generando storyboard base.", file=sys.stderr)
-        return _build_draft_proposal(video, reason="Modo directo sobre frames del video")
+        return _build_draft_proposal(video, reason="Análisis directo de fotograma")
     finally:
         if uploaded_file:
             try:
@@ -381,24 +375,22 @@ def regenerate_storyboard_panel(
     custom_prompt: str = "",
     custom_timestamp: Optional[float] = None,
 ) -> VideoProposal:
-    """
-    Regenera uno o todos los paneles del storyboard (cuando el usuario pulsa 'Regenerar imagen' en Telegram o UI).
-    """
+    """Regenera la imagen del panel Manga con nueva semilla (y nuevo timestamp/prompt si se especifica)."""
     moments = proposal.impact_moments or []
     for m in moments:
         idx = int(m.get("index", 1))
-        if panel_index is not None and idx != panel_index:
+        if panel_index is not None and panel_index > 0 and idx != panel_index:
             continue
 
         if custom_timestamp is not None and custom_timestamp >= 0:
             m["timestamp_sec"] = round(float(custom_timestamp), 2)
             m["timestamp_label"] = format_timestamp(m["timestamp_sec"])
+            m["moment_title"] = f"Hard Cut @ {m['timestamp_label']} ({m.get('freeze_duration', 0.8):.1f}s)"
 
         if custom_prompt.strip():
             m["manga_prompt"] = custom_prompt.strip()
 
         frame_file = FRAMES_DIR / f"{proposal.job_id}_p{idx}_frame.jpg"
-        # Añadimos sufijo de versión o sobreescribimos con nueva semilla
         panel_file = STORYBOARDS_DIR / f"{proposal.job_id}_p{idx}_manga.jpg"
 
         extract_frame_at_timestamp(video_path, float(m.get("timestamp_sec", 1.0)), frame_file)
@@ -415,70 +407,65 @@ def regenerate_storyboard_panel(
         m["source_frame_url"] = f"/media/frames/{frame_file.name}?v={new_seed}"
         m["art_engine"] = engine_used
 
-    proposal.scenes = [
-        {
-            "visual": f"[{m['timestamp_label']}] {m['moment_title']} ({m['art_engine']})",
-            "narration": f"{m['subjects_action']} | Prompt: {m['manga_prompt']}",
-        }
-        for m in moments
-    ]
-    proposal.visual_prompt = "\n\n".join(
-        [f"[Panel #{m['index']} @ {m['timestamp_label']}] {m['manga_prompt']}" for m in moments]
-    )
+    if moments:
+        m0 = moments[0]
+        proposal.visual_prompt = build_seinen_master_prompt(m0.get("manga_prompt", ""))
+        proposal.original_analysis = (
+            f"Cut Timestamp: {m0['timestamp_label']} | Freeze Duration: {m0.get('freeze_duration', 0.8)}s\n"
+            f"Movimiento detectado: {m0.get('subjects_action', '')}"
+        )
     return proposal
 
 
 def refine_proposal(
     proposal: VideoProposal, feedback: str, video_path: Optional[Path] = None
 ) -> VideoProposal:
-    """
-    Actualiza prompts, timestamps o estilo según instrucciones del usuario y regenera las imágenes manga.
-    """
+    """Actualiza cut_timestamp, freeze_duration o image_generation_prompt según el feedback del usuario."""
     if GEMINI_API_KEY and GEMINI_API_KEY != "tu_gemini_api_key_aqui":
         try:
             client = _get_client()
-            prompt = f"""
-Tenemos este storyboard actual para un Manga/Baki Impact Edit:
-{json.dumps(asdict(proposal), ensure_ascii=False, indent=2)}
+            m0 = (proposal.impact_moments or [{}])[0]
+            current_json = {
+                "cut_timestamp": m0.get("timestamp_label", "00:02.00"),
+                "freeze_duration": m0.get("freeze_duration", 0.8),
+                "action_description": m0.get("subjects_action", proposal.subjects_and_roles),
+                "image_generation_prompt": m0.get("manga_prompt", ""),
+            }
+            prompt = f"""Tenemos este análisis de impacto actual estilo Baki/Berserk:
+{json.dumps(current_json, ensure_ascii=False, indent=2)}
 
-El usuario pidió este ajuste o cambio ( o bien quiere regenerar con otro estilo/timestamp ):
+El usuario pidió el siguiente ajuste:
 "{feedback}"
 
-Devuelve ÚNICAMENTE el JSON actualizado manteniendo "original_analysis", "subjects_and_roles", "new_title", "social_caption" y la lista "impact_moments" (cada uno con "index", "timestamp_sec", "moment_title", "subjects_action", "manga_prompt", "sfx_type").
-"""
+Devuelve estrictamente el objeto JSON actualizado con este formato:
+{{
+  "cut_timestamp": "00:00.00",
+  "freeze_duration": 0.8,
+  "action_description": "Breve descripción del movimiento detectado",
+  "image_generation_prompt": "Gritty black and white manga drawing, ink on paper, heavy cross-hatching, Baki artstyle. [Describir al sujeto replicando exactamente la pose en ángulo dinámico o contra-picado], hyper-vascular muscles, glowing pupil-less eyes, black combat aura radiating, impact shockwave, speed lines radiating outward, raw sketch, extreme contrast."
+}}"""
             response = _generate_with_fallback(
                 client=client,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    temperature=0.7,
+                    temperature=0.65,
                 ),
             )
             data = json.loads(response.text)
-            proposal.original_analysis = data.get("original_analysis", proposal.original_analysis)
-            proposal.subjects_and_roles = data.get("subjects_and_roles", proposal.subjects_and_roles)
-            proposal.new_title = data.get("new_title", proposal.new_title)
-            proposal.social_caption = data.get("social_caption", proposal.social_caption)
-
-            new_moments = data.get("impact_moments")
-            if new_moments and isinstance(new_moments, list):
-                for i, nm in enumerate(new_moments):
-                    if i < len(proposal.impact_moments):
-                        proposal.impact_moments[i]["timestamp_sec"] = float(
-                            nm.get("timestamp_sec", proposal.impact_moments[i]["timestamp_sec"])
-                        )
-                        proposal.impact_moments[i]["timestamp_label"] = format_timestamp(
-                            proposal.impact_moments[i]["timestamp_sec"]
-                        )
-                        proposal.impact_moments[i]["moment_title"] = nm.get(
-                            "moment_title", proposal.impact_moments[i]["moment_title"]
-                        )
-                        proposal.impact_moments[i]["subjects_action"] = nm.get(
-                            "subjects_action", proposal.impact_moments[i]["subjects_action"]
-                        )
-                        proposal.impact_moments[i]["manga_prompt"] = nm.get(
-                            "manga_prompt", proposal.impact_moments[i]["manga_prompt"]
-                        )
+            if proposal.impact_moments:
+                m = proposal.impact_moments[0]
+                if "cut_timestamp" in data:
+                    m["timestamp_sec"] = round(parse_timestamp_to_seconds(data["cut_timestamp"]), 2)
+                    m["timestamp_label"] = format_timestamp(m["timestamp_sec"])
+                if "freeze_duration" in data:
+                    m["freeze_duration"] = max(0.6, min(1.0, float(data["freeze_duration"])))
+                if "action_description" in data:
+                    m["subjects_action"] = data["action_description"]
+                    proposal.subjects_and_roles = data["action_description"]
+                if "image_generation_prompt" in data:
+                    m["manga_prompt"] = data["image_generation_prompt"]
+                m["moment_title"] = f"Hard Cut @ {m['timestamp_label']} ({m['freeze_duration']:.1f}s)"
         except Exception as exc:
             print(f"[Analyzer] Refine info: {exc}", file=sys.stderr)
             for m in proposal.impact_moments:
