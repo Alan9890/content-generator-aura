@@ -1,0 +1,30 @@
+# Variables de entorno y secretos (NUNCA subir a GitHub)
+.env
+.env.*
+!.env.example
+
+# Archivos generados en ejecución (videos descargados, audios y propuestas)
+workspace/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Rust
+target/
+
+# Node.js
+node_modules/
+
+# Repositorio externo clonado localmente
+rea/
+
+# Sistema operativo / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

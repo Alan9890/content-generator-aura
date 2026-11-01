@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Video Recreator Studio</title>
+  <style>
+    :root {
+      --bg-base: #090b10;
+      --bg-panel: rgba(18, 22, 32, 0.85);
+      --bg-card: rgba(26, 32, 46, 0.75);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(99, 102, 241, 0.45);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --cyan: #06b6d4;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      background: radial-gradient(circle at 15% 15%, #161b2e 0%, var(--bg-base) 65%);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Header */
+    header {
+      height: 62px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 11, 16, 0.85);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--cyan));
+      display: grid;
+      place-items: center;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .dot.online {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    .dot.warn {
+      background: var(--warning);
+    }
+
+    button {
+      cursor: pointer;
+      font-family: inherit;
+      border: none;
+      border-radius: 9px;
+      padding: 9px 15px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.16s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, var(--success), #059669);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .btn-success:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      border-color: var(--border-highlight);
+      background: rgba(38, 46, 66, 0.9);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.14);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    /* Main Layout */
+    .workspace {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--bg-panel);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .new-job-box {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .new-job-box h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    input, textarea, select {
+      width: 100%;
+      background: rgba(10, 13, 20, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.86rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+    }
+
+    .queue-header {
+      padding: 12px 18px 8px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .job-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .job-item {
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .job-item:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .job-item.active {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.12);
+    }
+
+    .job-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .job-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge {
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .badge.downloading, .badge.analyzing, .badge.generating {
+      background: rgba(6, 182, 212, 0.15);
+      color: #67e8f9;
+    }
+    .badge.awaiting_approval {
+      background: rgba(245, 158, 11, 0.18);
+      color: #fcd34d;
+    }
+    .badge.completed {
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+    }
+    .badge.error, .badge.cancelled {
+      background: rgba(239, 68, 68, 0.18);
+      color: #fca5a5;
+    }
+
+    /* Main Content Panel */
+    .main-panel {
+      overflow-y: auto;
+      padding: 24px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      max-width: 460px;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    /* Stepper */
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+    .step {
+      padding: 10px 12px;
+      border-radius: 9px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .step.active {
+      border-color: var(--cyan);
+      color: #fff;
+      background: rgba(6, 182, 212, 0.12);
+    }
+    .step.done {
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #a7f3d0;
+    }
+
+    /* Studio Grid */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.35fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card h4 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .video-box {
+      background: #05070b;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .video-box-header {
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    video {
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      max-height: 330px;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field-group label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .refine-bar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .action-bar {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(6px);
+      display: none;
+      place-items: center;
+      z-index: 50;
+    }
+    .modal-backdrop.open {
+      display: grid;
+    }
+    .modal {
+      width: 520px;
+      max-width: 92vw;
+      background: #121722;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div>AI Video Recreator Studio</div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 400;">
+          YouTube · Instagram · Facebook · TikTok ➔ Análisis Gemini + Veo + Telegram Auth
+        </div>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="status-pill" title="Sincronizado con tu Bot de Telegram">
+        <span class="dot" id="tgDot"></span>
+        <span id="tgStatusText">Telegram: Verificando...</span>
+      </div>
+      <div class="status-pill">
+        <span class="dot" id="geminiDot"></span>
+        <span id="geminiStatusText">Gemini API</span>
+      </div>
+      <button class="btn-secondary" onclick="openSettings()">⚙️ Configuración</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="new-job-box">
+        <h3>➕ Nuevo Video</h3>
+        <input
+          type="text"
+          id="urlInput"
+          placeholder="Pega link de FB, IG, YouTube o TikTok..."
+        />
+        <textarea
+          id="styleInput"
+          rows="2"
+          placeholder="Opcional: Estilo o temática (ej. Hazlo sobre bienes raíces con humor)..."
+        ></textarea>
+        <button class="btn-primary" id="analyzeBtn" onclick="submitNewVideo()">
+          🚀 Descargar y Analizar
+        </button>
+      </div>
+
+      <div class="queue-header">
+        <span>Cola de Trabajo (UI + Telegram)</span>
+        <span id="jobCount">0</span>
+      </div>
+      <div class="job-list" id="jobList"></div>
+    </aside>
+
+    <!-- Main Studio Panel -->
+    <main class="main-panel" id="mainPanel">
+      <div class="empty-state" id="emptyState">
+        <div style="font-size: 2.6rem;">🎬</div>
+        <h2 style="color: var(--text-main); font-size: 1.2rem;">
+          Envía un link por Telegram o pégalo a la izquierda
+        </h2>
+        <p style="font-size: 0.88rem; line-height: 1.5;">
+          El agente descargará el video, analizará su estructura ganadora con IA, y te mostrará
+          aquí (y en tu Telegram) el <b>Guion + Prompt de Video IA</b> para que lo autorices antes de generar.
+        </p>
+      </div>
+
+      <div id="jobDetailView" style="display: none; flex-direction: column; gap: 18px;">
+        <!-- Pipeline Stepper -->
+        <div class="stepper">
+          <div class="step" id="stepDownload">1️⃣ Descarga</div>
+          <div class="step" id="stepAnalyze">2️⃣ Análisis & Guion</div>
+          <div class="step" id="stepApproval">3️⃣ Tu Autorización</div>
+          <div class="step" id="stepGenerate">4️⃣ Generación IA</div>
+          <div class="step" id="stepDone">5️⃣ Listo</div>
+        </div>
+
+        <div id="errorBanner" style="display:none; padding:12px 16px; border-radius:10px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; font-size:0.85rem;"></div>
+
+        <div class="studio-grid">
+          <!-- Left Column: Video Players & Original Analysis -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card">
+              <h4>
+                <span>🎞️ Vista Previa de Videos</span>
+                <span id="engineBadge" style="font-size: 0.72rem; color: var(--cyan);"></span>
+              </h4>
+              <div class="video-grid">
+                <div class="video-box">
+                  <div class="video-box-header">
+                    <span>Original Descargado</span>
+                    <a id="sourceLink" href="#" target="_blank" style="color: var(--accent); text-decoration: none;">Link ↗</a>
+                  </div>
+                  <video id="sourceVideoPlayer" controls playsinline></video>
+                </div>
+
+                <div class="video-box">
+                  <div class="video-box-header">
+                    <span>Nuevo Video IA</span>
+                    <a id="downloadFinalBtn" href="#" download style="display: none; color: var(--success); text-decoration: none; font-weight: 600;">⬇️ Descargar</a>
+                  </div>
+                  <video id="finalVideoPlayer" controls playsinline></video>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h4>🔍 Análisis del Video Original</h4>
+              <p id="originalAnalysisText" style="font-size: 0.86rem; line-height: 1.55; color: #d1d5db;"></p>
+            </div>
+          </div>
+
+          <!-- Right Column: Script, Visual Prompt & Approval Controls -->
+          <div class="card">
+            <h4>
+              <span>✍️ Estudio de Guion y Prompt (Autorización)</span>
+              <span id="statusBadge" class="badge"></span>
+            </h4>
+
+            <div class="field-group">
+              <label>📌 Nuevo Título</label>
+              <input type="text" id="editTitle" />
+            </div>
+
+            <div class="field-group">
+              <label>🎙️ Guion de Voz en Off (Se convertirá en locución IA)</label>
+              <textarea id="editScript" rows="4"></textarea>
+            </div>
+
+            <div class="field-group">
+              <label>🎨 Prompt Visual Maestro (Veo / Runway / Kling - 9:16)</label>
+              <textarea id="editPrompt" rows="4"></textarea>
+            </div>
+
+            <div class="field-group">
+              <label>✨ Pedirle ajustes a la IA (igual que en Telegram)</label>
+              <div class="refine-bar">
+                <input
+                  type="text"
+                  id="refineInput"
+                  placeholder="Ej: Haz el guion más corto y agresivo en los primeros 3 segundos..."
+                />
+                <button class="btn-secondary" onclick="refineWithAI()">✨ Refinar</button>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label style="display:flex; justify-content:space-between;">
+                <span>📲 Copy + Hashtags (Listo para YT / IG / FB / TikTok)</span>
+                <span style="cursor:pointer; color:var(--cyan);" onclick="copyCaption()">📋 Copiar</span>
+              </label>
+              <textarea id="editCaption" rows="3"></textarea>
+            </div>
+
+            <div class="action-bar">
+              <button class="btn-danger" onclick="cancelActiveJob()">❌ Cancelar</button>
+              <button class="btn-secondary" onclick="saveManualEdits()">💾 Guardar Cambios</button>
+              <button class="btn-success" id="approveBtn" onclick="approveAndGenerate()">
+                ✅ Autorizar y Generar Video IA
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal">
+      <h3 style="font-size: 1.05rem;">⚙️ Configuración del Agente</h3>
+      <div class="field-group">
+        <label>Token de Bot de Telegram (@BotFather)</label>
+        <input type="password" id="cfgTelegramToken" placeholder="Deja vacío para conservar el actual" />
+      </div>
+      <div class="field-group">
+        <label>Tu Telegram User ID Autorizado (Opcional)</label>
+        <input type="text" id="cfgTelegramUser" placeholder="Ej. 123456789" />
+      </div>
+      <div class="field-group">
+        <label>Google Gemini API Key (Análisis Multimodal + Google Veo)</label>
+        <input type="password" id="cfgGeminiKey" placeholder="Deja vacío para conservar la actual" />
+      </div>
+      <div class="field-group">
+        <label>Motor de Voz IA (TTS)</label>
+        <select id="cfgTtsProvider">
+          <option value="edge">Edge Neural TTS (Gratis, sin API Key)</option>
+          <option value="elevenlabs">ElevenLabs API (Voz clonada / premium)</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label>Voz Edge-TTS (Español)</label>
+        <input type="text" id="cfgEdgeVoice" value="es-MX-DaliaNeural" />
+      </div>
+      <div class="field-group">
+        <label>Estilo / Nicho por defecto</label>
+        <textarea id="cfgDefaultStyle" rows="3"></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+        <button class="btn-secondary" onclick="closeSettings()">Cerrar</button>
+        <button class="btn-primary" onclick="saveSettings()">💾 Guardar Configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let stateData = { jobs: [], config: {}, telegram_connected: false };
+    let selectedJobId = null;
+    let isEditingFields = false;
+
+    const STATUS_LABELS = {
+      downloading: "⬇️ Descargando",
+      analyzing: "🧠 Analizando IA",
+      awaiting_approval: "⏳ Por Autorizar",
+      generating: "🎬 Renderizando",
+      completed: "✅ Completado",
+      error: "❌ Error",
+      cancelled: "🚫 Cancelado"
+    };
+
+    async function fetchState() {
+      try {
+        const res = await fetch("/api/state");
+        stateData = await res.json();
+        renderHeader();
+        renderSidebar();
+        if (selectedJobId) {
+          const job = stateData.jobs.find(j => j.job_id === selectedJobId);
+          if (job) renderJobDetail(job);
+        } else if (stateData.jobs.length > 0) {
+          selectJob(stateData.jobs[0].job_id);
+        }
+      } catch (e) {
+        console.error("Error fetching state:", e);
+      }
+    }
+
+    function renderHeader() {
+      const tgDot = document.getElementById("tgDot");
+      const tgText = document.getElementById("tgStatusText");
+      if (stateData.telegram_connected) {
+        tgDot.className = "dot online";
+        tgText.textContent = "Telegram: Conectado";
+      } else if (stateData.config.has_telegram_token) {
+        tgDot.className = "dot warn";
+        tgText.textContent = "Telegram: Conectando...";
+      } else {
+        tgDot.className = "dot";
+        tgText.textContent = "Telegram: Sin Token";
+      }
+
+      const gemDot = document.getElementById("geminiDot");
+      const gemText = document.getElementById("geminiStatusText");
+      if (stateData.config.has_gemini_key) {
+        gemDot.className = "dot online";
+        gemText.textContent = "Gemini + Veo: Activo";
+      } else {
+        gemDot.className = "dot warn";
+        gemText.textContent = "Gemini: Falta API Key";
+      }
+    }
+
+    function renderSidebar() {
+      const list = document.getElementById("jobList");
+      document.getElementById("jobCount").textContent = stateData.jobs.length;
+      list.innerHTML = stateData.jobs.map(job => `
+        <div class="job-item ${job.job_id === selectedJobId ? 'active' : ''}" onclick="selectJob('${job.job_id}')">
+          <div class="job-item-top">
+            <span>${job.platform} · #${job.job_id}</span>
+            <span class="badge ${job.status}">${STATUS_LABELS[job.status] || job.status}</span>
+          </div>
+          <div class="job-title">${escapeHtml(job.new_title || job.title || job.url)}</div>
+        </div>
+      `).join("");
+    }
+
+    function selectJob(jobId) {
+      selectedJobId = jobId;
+      isEditingFields = false;
+      const job = stateData.jobs.find(j => j.job_id === jobId);
+      if (job) {
+        renderSidebar();
+        renderJobDetail(job, true);
+      }
+    }
+
+    function renderJobDetail(job, forcePopulate = false) {
+      document.getElementById("emptyState").style.display = "none";
+      document.getElementById("jobDetailView").style.display = "flex";
+
+      updateStepper(job.status);
+
+      const errBanner = document.getElementById("errorBanner");
+      if (job.error) {
+        errBanner.style.display = "block";
+        errBanner.textContent = "⚠️ " + job.error;
+      } else {
+        errBanner.style.display = "none";
+      }
+
+      const statusBadge = document.getElementById("statusBadge");
+      statusBadge.className = `badge ${job.status}`;
+      statusBadge.textContent = STATUS_LABELS[job.status] || job.status;
+
+      document.getElementById("sourceLink").href = job.url;
+      document.getElementById("originalAnalysisText").textContent =
+        job.original_analysis || "Analizando estructura narrativa, gancho y ritmo del video...";
+
+      document.getElementById("engineBadge").textContent = job.engine_used || "";
+
+      const srcPlayer = document.getElementById("sourceVideoPlayer");
+      if (job.source_video_url && !srcPlayer.src.endsWith(job.source_video_url)) {
+        srcPlayer.src = job.source_video_url;
+      } else if (!job.source_video_url) {
+        srcPlayer.removeAttribute("src");
+      }
+
+      const finalPlayer = document.getElementById("finalVideoPlayer");
+      const dlBtn = document.getElementById("downloadFinalBtn");
+      if (job.final_video_url) {
+        if (!finalPlayer.src.endsWith(job.final_video_url)) {
+          finalPlayer.src = job.final_video_url;
+        }
+        dlBtn.style.display = "inline";
+        dlBtn.href = job.final_video_url;
+      } else {
+        finalPlayer.removeAttribute("src");
+        dlBtn.style.display = "none";
+      }
+
+      if (forcePopulate || !isEditingFields) {
+        document.getElementById("editTitle").value = job.new_title || "";
+        document.getElementById("editScript").value = job.voiceover_script || "";
+        document.getElementById("editPrompt").value = job.visual_prompt || "";
+        document.getElementById("editCaption").value = job.social_caption || "";
+      }
+    }
+
+    ["editTitle", "editScript", "editPrompt", "editCaption"].forEach(id => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", () => { isEditingFields = true; });
+      });
+    });
+
+    function updateStepper(status) {
+      const steps = ["stepDownload", "stepAnalyze", "stepApproval", "stepGenerate", "stepDone"];
+      steps.forEach(s => document.getElementById(s).className = "step");
+      if (status === "downloading") {
+        document.getElementById("stepDownload").className = "step active";
+      } else if (status === "analyzing") {
+        document.getElementById("stepDownload").className = "step done";
+        document.getElementById("stepAnalyze").className = "step active";
+      } else if (status === "awaiting_approval") {
+        document.getElementById("stepDownload").className = "step done";
+        document.getElementById("stepAnalyze").className = "step done";
+        document.getElementById("stepApproval").className = "step active";
+      } else if (status === "generating") {
+        document.getElementById("stepDownload").className = "step done";
+        document.getElementById("stepAnalyze").className = "step done";
+        document.getElementById("stepApproval").className = "step done";
+        document.getElementById("stepGenerate").className = "step active";
+      } else if (status === "completed") {
+        steps.forEach(s => document.getElementById(s).className = "step done");
+      }
+    }
+
+    async function submitNewVideo() {
+      const url = document.getElementById("urlInput").value.trim();
+      const style = document.getElementById("styleInput").value.trim();
+      if (!url) return alert("Pega un link de YouTube, Instagram, Facebook o TikTok.");
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, style })
+      });
+      const data = await res.json();
+      document.getElementById("urlInput").value = "";
+      if (data.job_id) {
+        selectedJobId = data.job_id;
+        await fetchState();
+      }
+    }
+
+    async function saveManualEdits() {
+      if (!selectedJobId) return;
+      await fetch(`/api/jobs/${selectedJobId}/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          new_title: document.getElementById("editTitle").value,
+          voiceover_script: document.getElementById("editScript").value,
+          visual_prompt: document.getElementById("editPrompt").value,
+          social_caption: document.getElementById("editCaption").value
+        })
+      });
+      isEditingFields = false;
+      await fetchState();
+    }
+
+    async function refineWithAI() {
+      if (!selectedJobId) return;
+      const feedback = document.getElementById("refineInput").value.trim();
+      if (!feedback) return;
+      document.getElementById("refineInput").value = "Refinando con Gemini...";
+      await fetch(`/api/jobs/${selectedJobId}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedback })
+      });
+      document.getElementById("refineInput").value = "";
+      isEditingFields = false;
+      await fetchState();
+    }
+
+    async function approveAndGenerate() {
+      if (!selectedJobId) return;
+      await saveManualEdits();
+      await fetch(`/api/jobs/${selectedJobId}/approve`, { method: "POST" });
+      await fetchState();
+    }
+
+    async function cancelActiveJob() {
+      if (!selectedJobId) return;
+      await fetch(`/api/jobs/${selectedJobId}/cancel`, { method: "POST" });
+      await fetchState();
+    }
+
+    function copyCaption() {
+      const text = document.getElementById("editCaption").value;
+      navigator.clipboard.writeText(text);
+    }
+
+    function openSettings() {
+      const cfg = stateData.config || {};
+      document.getElementById("cfgTelegramUser").value = cfg.allowed_telegram_user_id || "";
+      document.getElementById("cfgTtsProvider").value = cfg.tts_provider || "edge";
+      document.getElementById("cfgEdgeVoice").value = cfg.edge_tts_voice || "es-MX-DaliaNeural";
+      document.getElementById("cfgDefaultStyle").value = cfg.default_content_style || "";
+      document.getElementById("settingsModal").classList.add("open");
+    }
+
+    function closeSettings() {
+      document.getElementById("settingsModal").classList.remove("open");
+    }
+
+    async function saveSettings() {
+      await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegram_bot_token: document.getElementById("cfgTelegramToken").value,
+          allowed_telegram_user_id: document.getElementById("cfgTelegramUser").value,
+          gemini_api_key: document.getElementById("cfgGeminiKey").value,
+          tts_provider: document.getElementById("cfgTtsProvider").value,
+          edge_tts_voice: document.getElementById("cfgEdgeVoice").value,
+          default_content_style: document.getElementById("cfgDefaultStyle").value
+        })
+      });
+      document.getElementById("cfgTelegramToken").value = "";
+      document.getElementById("cfgGeminiKey").value = "";
+      closeSettings();
+      await fetchState();
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, m => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[m]));
+    }
+
+    fetchState();
+    setInterval(fetchState, 2000);
+  </script>
+</body>
+</html>
