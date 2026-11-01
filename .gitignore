@@ -5,6 +5,8 @@
 
 # Archivos generados en ejecución (videos descargados, audios y propuestas)
 workspace/
+assets/audio/phonk/*.wav
+assets/audio/sfx/*.wav
 
 # Python
 __pycache__/

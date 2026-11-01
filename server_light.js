@@ -1,6 +1,6 @@
 /**
  * Motor Ultra-Ligero Zero-Dependencies (Node.js Nativo + UI WebView + Telegram Bot Sync)
- * Consumo de RAM: ~22 MB | 0 paquetes npm externos | Compatible 1:1 con el motor Rust (src/main.rs)
+ * Pipeline Aura / Manga Impact Edit (6 Pasos: Ingesta -> Análisis Multimodal -> Arte Manga/Baki -> Storyboard Telegram/UI -> Ensamblado FFmpeg Zoom/Shake + Phonk/SFX -> Entrega MP4)
  */
 const http = require("http");
 const https = require("https");
@@ -14,13 +14,15 @@ const BASE_DIR = __dirname;
 const UI_FILE = path.join(BASE_DIR, "ui", "index.html");
 const WORK_DIR = path.join(BASE_DIR, "workspace");
 const DOWNLOADS_DIR = path.join(WORK_DIR, "downloads");
+const FRAMES_DIR = path.join(WORK_DIR, "frames");
+const STORYBOARDS_DIR = path.join(WORK_DIR, "storyboards");
 const OUTPUTS_DIR = path.join(WORK_DIR, "outputs");
 const ENV_FILE = path.join(BASE_DIR, ".env");
 
-fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
-fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+for (const d of [DOWNLOADS_DIR, FRAMES_DIR, STORYBOARDS_DIR, OUTPUTS_DIR]) {
+  fs.mkdirSync(d, { recursive: true });
+}
 
-// Estado compartido entre la UI y Telegram
 const state = {
   jobs: new Map(),
   jobOrder: [],
@@ -30,14 +32,15 @@ const state = {
     telegram_bot_token: "",
     allowed_telegram_user_id: "",
     gemini_api_key: "",
-    gemini_analysis_model: "gemini-3.8-flash",
-    veo_model: "gemini-omni-1.1-flash",
-    tts_provider: "edge",
-    edge_tts_voice: "es-MX-DaliaNeural",
-    elevenlabs_api_key: "",
-    elevenlabs_voice_id: "",
+    gemini_analysis_model: "gemini-2.5-flash",
+    art_provider: "auto",
+    sd_webui_url: "http://127.0.0.1:7860",
+    comfyui_url: "http://127.0.0.1:8188",
+    manga_lora_tag: "<lora:baki_manga_style:0.85>",
+    img2img_denoising: "0.62",
+    impact_hold_seconds: "1.15",
     default_content_style:
-      "Video corto dinámico (Reel/Short/TikTok) en español, con un gancho fuerte en los primeros 3 segundos, tono profesional pero cercano, recreado con visuales generados por IA.",
+      "Edición de impacto estilo Manga Seinen / Baki Hanma / Berserk: trazos de tinta negra agresivos, sombreado dramático cross-hatching, líneas cinéticas de velocidad (speedlines), aura de combate intensa, blanco y negro de ultra alto contraste.",
   },
 };
 
@@ -54,11 +57,12 @@ function loadEnv() {
     if (k === "ALLOWED_TELEGRAM_USER_ID") state.config.allowed_telegram_user_id = v;
     if (k === "GEMINI_API_KEY") state.config.gemini_api_key = v;
     if (k === "GEMINI_ANALYSIS_MODEL" && v) state.config.gemini_analysis_model = v;
-    if (k === "VEO_MODEL" && v) state.config.veo_model = v;
-    if (k === "TTS_PROVIDER" && v) state.config.tts_provider = v;
-    if (k === "EDGE_TTS_VOICE" && v) state.config.edge_tts_voice = v;
-    if (k === "ELEVENLABS_API_KEY") state.config.elevenlabs_api_key = v;
-    if (k === "ELEVENLABS_VOICE_ID") state.config.elevenlabs_voice_id = v;
+    if (k === "ART_PROVIDER" && v) state.config.art_provider = v;
+    if (k === "SD_WEBUI_URL" && v) state.config.sd_webui_url = v;
+    if (k === "COMFYUI_URL" && v) state.config.comfyui_url = v;
+    if (k === "MANGA_LORA_TAG" && v) state.config.manga_lora_tag = v;
+    if (k === "IMG2IMG_DENOISING" && v) state.config.img2img_denoising = v;
+    if (k === "IMPACT_HOLD_SECONDS" && v) state.config.impact_hold_seconds = v;
     if (k === "DEFAULT_CONTENT_STYLE" && v) state.config.default_content_style = v;
   }
 }
@@ -70,14 +74,24 @@ function saveEnv() {
     `ALLOWED_TELEGRAM_USER_ID=${c.allowed_telegram_user_id}`,
     `GEMINI_API_KEY=${c.gemini_api_key}`,
     `GEMINI_ANALYSIS_MODEL=${c.gemini_analysis_model}`,
-    `VEO_MODEL=${c.veo_model}`,
-    `TTS_PROVIDER=${c.tts_provider}`,
-    `EDGE_TTS_VOICE=${c.edge_tts_voice}`,
-    `ELEVENLABS_API_KEY=${c.elevenlabs_api_key}`,
-    `ELEVENLABS_VOICE_ID=${c.elevenlabs_voice_id}`,
+    `ART_PROVIDER=${c.art_provider}`,
+    `SD_WEBUI_URL=${c.sd_webui_url}`,
+    `COMFYUI_URL=${c.comfyui_url}`,
+    `MANGA_LORA_TAG=${c.manga_lora_tag}`,
+    `IMG2IMG_DENOISING=${c.img2img_denoising}`,
+    `IMPACT_HOLD_SECONDS=${c.impact_hold_seconds}`,
     `DEFAULT_CONTENT_STYLE=${(c.default_content_style || "").replace(/\r?\n/g, " ")}`,
   ].join("\n");
   fs.writeFileSync(ENV_FILE, content, "utf8");
+}
+
+function detectPlatform(url) {
+  const u = (url || "").toLowerCase();
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
+  if (u.includes("instagram.com")) return "Instagram";
+  if (u.includes("facebook.com") || u.includes("fb.watch")) return "Facebook";
+  if (u.includes("tiktok.com")) return "TikTok";
+  return "Web";
 }
 
 function loadExistingProposals() {
@@ -95,17 +109,19 @@ function loadExistingProposals() {
         job_id: jobId,
         url: p.source_url || "",
         platform: p.platform || detectPlatform(p.source_url || ""),
-        title: p.new_title || "Video Analizado",
+        title: p.new_title || "Manga Aura Edit",
         status: hasFinal ? "completed" : "awaiting_approval",
         error: null,
         source_video_url: `/media/downloads/${jobId}.mp4`,
         final_video_url: hasFinal ? `/media/outputs/${jobId}_final.mp4` : null,
-        engine_used: hasFinal ? "IA Video Generator" : null,
+        engine_used: hasFinal ? "Manga Impact + Phonk/SFX (9:16)" : null,
         original_analysis: p.original_analysis || "",
+        subjects_and_roles: p.subjects_and_roles || "",
         new_title: p.new_title || "",
         voiceover_script: p.voiceover_script || "",
         visual_prompt: p.visual_prompt || "",
         scenes: p.scenes || [],
+        impact_moments: p.impact_moments || [],
         social_caption: p.social_caption || "",
         chat_id: null,
       };
@@ -118,15 +134,6 @@ function loadExistingProposals() {
 loadEnv();
 loadExistingProposals();
 
-function detectPlatform(url) {
-  const u = (url || "").toLowerCase();
-  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
-  if (u.includes("instagram.com")) return "Instagram";
-  if (u.includes("facebook.com") || u.includes("fb.watch")) return "Facebook";
-  if (u.includes("tiktok.com")) return "TikTok";
-  return "Web";
-}
-
 function runPythonCli(args) {
   return new Promise((resolve, reject) => {
     const env = {
@@ -134,11 +141,12 @@ function runPythonCli(args) {
       TELEGRAM_BOT_TOKEN: state.config.telegram_bot_token,
       GEMINI_API_KEY: state.config.gemini_api_key,
       GEMINI_ANALYSIS_MODEL: state.config.gemini_analysis_model,
-      VEO_MODEL: state.config.veo_model,
-      TTS_PROVIDER: state.config.tts_provider,
-      EDGE_TTS_VOICE: state.config.edge_tts_voice,
-      ELEVENLABS_API_KEY: state.config.elevenlabs_api_key,
-      ELEVENLABS_VOICE_ID: state.config.elevenlabs_voice_id,
+      ART_PROVIDER: state.config.art_provider,
+      SD_WEBUI_URL: state.config.sd_webui_url,
+      COMFYUI_URL: state.config.comfyui_url,
+      MANGA_LORA_TAG: state.config.manga_lora_tag,
+      IMG2IMG_DENOISING: state.config.img2img_denoising,
+      IMPACT_HOLD_SECONDS: state.config.impact_hold_seconds,
       DEFAULT_CONTENT_STYLE: state.config.default_content_style,
       PYTHONIOENCODING: "utf-8",
     };
@@ -157,7 +165,7 @@ function runPythonCli(args) {
               ? stdout.slice(startIdx, endIdx + 1)
               : stdout.trim();
           resolve(JSON.parse(cleanJson));
-        } catch (err) {
+        } catch {
           reject(new Error(`Salida inválida de Python: ${stdout}`));
         }
       } else {
@@ -167,7 +175,7 @@ function runPythonCli(args) {
   });
 }
 
-// --- Funciones de Telegram API nativa (HTTPS sin librerías pesadas) ---
+// --- Funciones de Telegram API nativa (JSON + Multipart Upload para fotos y videos) ---
 function tgApiRequest(method, payload) {
   return new Promise((resolve) => {
     const token = state.config.telegram_bot_token;
@@ -202,30 +210,129 @@ function tgApiRequest(method, payload) {
   });
 }
 
+function tgUploadFile(method, fieldName, filePath, fields = {}) {
+  return new Promise((resolve) => {
+    const token = state.config.telegram_bot_token;
+    if (!token || token === "tu_token_de_telegram_aqui" || !fs.existsSync(filePath)) {
+      return resolve(null);
+    }
+    const boundary = "----AuraBoundary" + crypto.randomUUID().replace(/-/g, "");
+    const parts = [];
+    for (const [k, v] of Object.entries(fields)) {
+      parts.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`,
+          "utf8"
+        )
+      );
+    }
+    const filename = path.basename(filePath);
+    const mime = filename.endsWith(".mp4") ? "video/mp4" : "image/jpeg";
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`,
+        "utf8"
+      )
+    );
+    parts.push(fs.readFileSync(filePath));
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"));
+    const body = Buffer.concat(parts);
+
+    const req = https.request(
+      {
+        hostname: "api.telegram.org",
+        path: `/bot${token}/${method}`,
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": body.length,
+        },
+        timeout: 120000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on("error", () => resolve(null));
+    req.write(body);
+    req.end();
+  });
+}
+
 function formatTelegramProposal(job) {
+  const momentsText = (job.impact_moments || [])
+    .map(
+      (m) =>
+        `  ⚡ <b>Panel #${m.index} [${m.timestamp_label}] — ${m.moment_title}</b>\n` +
+        `      <i>${m.subjects_action}</i>\n` +
+        `      🎨 Motor: <code>${m.art_engine || "Manga Engine"}</code>`
+    )
+    .join("\n\n");
+
   return (
-    `🎬 <b>Propuesta Lista (${job.platform})</b> [#${job.job_id}]\n\n` +
-    `🔍 <b>Análisis Original:</b>\n${job.original_analysis}\n\n` +
-    `📌 <b>Nuevo Título:</b> ${job.new_title}\n\n` +
-    `🎙️ <b>Guion (Voz en Off):</b>\n<i>${job.voiceover_script}</i>\n\n` +
-    `🎨 <b>Prompt de Video IA:</b>\n<code>${job.visual_prompt}</code>\n\n` +
-    `📲 <b>Copy Sugerido:</b>\n${job.social_caption}`
+    `🔥 <b>STORYBOARD MANGA / AURA EDIT (${job.platform})</b> [#${job.job_id}]\n\n` +
+    `📌 <b>Título:</b> ${job.new_title}\n\n` +
+    `🥊 <b>Sujetos y Roles:</b>\n${job.subjects_and_roles || "Enfrentamiento principal"}\n\n` +
+    `🔍 <b>Análisis de Tensión:</b>\n${job.original_analysis}\n\n` +
+    `⏱️ <b>Timestamps de Clímax:</b>\n${momentsText}\n\n` +
+    `📲 <b>Copy:</b>\n${job.social_caption}`
   );
 }
 
-function approvalKeyboard(jobId) {
+function approvalKeyboard(jobId, numPanels = 3) {
+  const regenRow = [];
+  for (let i = 1; i <= Math.min(numPanels || 3, 4); i++) {
+    regenRow.push({
+      text: `🔄 Regen #${i}`,
+      callback_data: `regen:${jobId}:${i}`,
+    });
+  }
   return {
     inline_keyboard: [
-      [{ text: "✅ Aprobar y Generar Video IA", callback_data: `approve:${jobId}` }],
+      [{ text: "✅ Aprobar y Ensamblar Video (9:16)", callback_data: `approve:${jobId}` }],
+      regenRow,
       [
-        { text: "✏️ Editar con IA", callback_data: `edit:${jobId}` },
-        { text: "❌ Cancelar", callback_data: `cancel:${jobId}` },
+        { text: "🔄 Regenerar Todas", callback_data: `regen:${jobId}:0` },
+        { text: "✏️ Editar Prompts/Tiempos", callback_data: `edit:${jobId}` },
       ],
+      [{ text: "❌ Cancelar", callback_data: `cancel:${jobId}` }],
     ],
   };
 }
 
-// --- Orquestación del Flujo ---
+async function sendStoryboardsToTelegram(chatId, job) {
+  if (!chatId) return;
+  for (const m of job.impact_moments || []) {
+    if (m.storyboard_image_path && fs.existsSync(m.storyboard_image_path)) {
+      await tgUploadFile("sendPhoto", "photo", m.storyboard_image_path, {
+        chat_id: String(chatId),
+        caption: `⚡ Panel #${m.index} [${m.timestamp_label}] — ${m.moment_title}\n${m.subjects_action}`,
+      });
+    }
+  }
+}
+
+function applyProposalToJob(job, p) {
+  job.original_analysis = p.original_analysis || job.original_analysis;
+  job.subjects_and_roles = p.subjects_and_roles || job.subjects_and_roles;
+  job.new_title = p.new_title || job.new_title || "Manga Aura Edit";
+  job.title = job.new_title;
+  job.voiceover_script = p.voiceover_script || job.voiceover_script;
+  job.visual_prompt = p.visual_prompt || job.visual_prompt;
+  job.scenes = p.scenes || job.scenes;
+  job.impact_moments = p.impact_moments || job.impact_moments || [];
+  job.social_caption = p.social_caption || job.social_caption;
+}
+
+// --- Orquestación del Pipeline (Pasos 1 a 6) ---
 async function startJobPipeline(url, style, chatId = null) {
   const jobId = crypto.randomUUID().slice(0, 8);
   const effectiveStyle = (style || "").trim() || state.config.default_content_style;
@@ -234,17 +341,19 @@ async function startJobPipeline(url, style, chatId = null) {
     job_id: jobId,
     url,
     platform: detectPlatform(url),
-    title: "Descargando video...",
+    title: "Paso 1: Descargando video base...",
     status: "downloading",
     error: null,
     source_video_url: null,
     final_video_url: null,
     engine_used: null,
     original_analysis: "",
+    subjects_and_roles: "",
     new_title: "",
     voiceover_script: "",
     visual_prompt: "",
     scenes: [],
+    impact_moments: [],
     social_caption: "",
     chat_id: chatId,
   };
@@ -257,7 +366,7 @@ async function startJobPipeline(url, style, chatId = null) {
       if (chatId) {
         await tgApiRequest("sendMessage", {
           chat_id: chatId,
-          text: `⬇️ Descargando y analizando video de <b>${job.platform}</b> (Job <code>#${jobId}</code>)...`,
+          text: `⬇️ <b>Paso 1-3:</b> Descargando video de <b>${job.platform}</b>, extrayendo timestamps de clímax y generando paneles Manga/Baki (Job <code>#${jobId}</code>)...`,
           parse_mode: "HTML",
         });
       }
@@ -275,22 +384,17 @@ async function startJobPipeline(url, style, chatId = null) {
 
       const p = result.proposal || {};
       job.status = "awaiting_approval";
-      job.original_analysis = p.original_analysis || "";
-      job.new_title = p.new_title || "Nuevo Video IA";
-      job.title = job.new_title;
-      job.voiceover_script = p.voiceover_script || "";
-      job.visual_prompt = p.visual_prompt || "";
-      job.scenes = p.scenes || [];
-      job.social_caption = p.social_caption || "";
+      applyProposalToJob(job, p);
       job.source_video_url = `/media/downloads/${jobId}.mp4`;
 
       if (chatId) {
         state.activeJobByChat.set(chatId, jobId);
+        await sendStoryboardsToTelegram(chatId, job);
         await tgApiRequest("sendMessage", {
           chat_id: chatId,
           text: formatTelegramProposal(job),
           parse_mode: "HTML",
-          reply_markup: approvalKeyboard(jobId),
+          reply_markup: approvalKeyboard(jobId, (job.impact_moments || []).length),
         });
       }
     } catch (err) {
@@ -319,7 +423,7 @@ async function triggerGeneration(jobId) {
       if (job.chat_id) {
         await tgApiRequest("sendMessage", {
           chat_id: job.chat_id,
-          text: `🎬 <b>Generando video IA para #${jobId}...</b>\nTe avisaré en cuanto esté listo.`,
+          text: `🎬 <b>Paso 5/6 (#${jobId}):</b> Cortando en timestamps clave, insertando paneles Manga con Zoom/Shake y montando audio Phonk + SFX de golpe...`,
           parse_mode: "HTML",
         });
       }
@@ -329,25 +433,36 @@ async function triggerGeneration(jobId) {
         "--job-id",
         jobId,
         "--script",
-        job.voiceover_script,
+        job.voiceover_script || "",
         "--prompt",
-        job.visual_prompt,
+        job.visual_prompt || "",
       ]);
 
       job.status = "completed";
-      job.engine_used = res.engine_used || "IA Video Generator";
-      job.final_video_url = `/media/outputs/${jobId}_final.mp4`;
+      job.engine_used = res.engine_used || "Manga Impact + Phonk/SFX (9:16)";
+      job.final_video_url = `/media/outputs/${jobId}_final.mp4?t=${Date.now()}`;
 
+      const finalFilePath = path.join(OUTPUTS_DIR, `${jobId}_final.mp4`);
       if (job.chat_id) {
-        await tgApiRequest("sendMessage", {
-          chat_id: job.chat_id,
-          text:
-            `✅ <b>¡Video IA Terminado! (#${jobId})</b>\n` +
-            `🛠 Motor: <i>${job.engine_used}</i>\n` +
-            `📂 Archivo guardado en: <code>workspace/outputs/${jobId}_final.mp4</code>\n\n` +
-            `📲 <b>Copy para publicar:</b>\n${job.social_caption}`,
-          parse_mode: "HTML",
-        });
+        if (fs.existsSync(finalFilePath)) {
+          await tgUploadFile("sendVideo", "video", finalFilePath, {
+            chat_id: String(job.chat_id),
+            caption:
+              `🔥 ${job.new_title}\n` +
+              `🥊 Sujetos: ${job.subjects_and_roles}\n` +
+              `🛠 ${job.engine_used}\n\n` +
+              `${job.social_caption}`.slice(0, 950),
+          });
+        } else {
+          await tgApiRequest("sendMessage", {
+            chat_id: job.chat_id,
+            text:
+              `✅ <b>¡Aura Edit Terminado! (#${jobId})</b>\n` +
+              `🛠 Motor: <i>${job.engine_used}</i>\n` +
+              `📂 Archivo: <code>workspace/outputs/${jobId}_final.mp4</code>`,
+            parse_mode: "HTML",
+          });
+        }
       }
     } catch (err) {
       job.status = "error";
@@ -355,7 +470,7 @@ async function triggerGeneration(jobId) {
       if (job.chat_id) {
         await tgApiRequest("sendMessage", {
           chat_id: job.chat_id,
-          text: `❌ Error generando video #${jobId}: ${err.message}`,
+          text: `❌ Error ensamblando video #${jobId}: ${err.message}`,
         });
       }
     }
@@ -403,9 +518,9 @@ async function handleTelegramUpdate(upd) {
       await tgApiRequest("sendMessage", {
         chat_id: chatId,
         text:
-          "⚡ <b>AI Video Recreator Studio Conectado</b>\n\n" +
+          "🔥 <b>AI Manga / Aura Impact Studio Conectado</b>\n\n" +
           "Envíame un link de <b>Facebook, Instagram, YouTube o TikTok</b>.\n" +
-          "Verás el progreso tanto aquí en Telegram como en tu UI de escritorio.",
+          "Extraeré los timestamps de clímax, identificaré los sujetos y te enviaré los storyboards estilo Manga/Baki para tu aprobación.",
         parse_mode: "HTML",
       });
       return;
@@ -423,7 +538,7 @@ async function handleTelegramUpdate(upd) {
       const job = state.jobs.get(activeJobId);
       await tgApiRequest("sendMessage", {
         chat_id: chatId,
-        text: `✨ Refinando guion y prompt del Job #${activeJobId}...`,
+        text: `🎨 Ajustando prompts/timestamps y regenerando storyboards del Job #${activeJobId}...`,
       });
       try {
         const res = await runPythonCli([
@@ -433,16 +548,13 @@ async function handleTelegramUpdate(upd) {
           "--feedback",
           text,
         ]);
-        const p = res.proposal || {};
-        job.new_title = p.new_title || job.new_title;
-        job.voiceover_script = p.voiceover_script || job.voiceover_script;
-        job.visual_prompt = p.visual_prompt || job.visual_prompt;
-        job.social_caption = p.social_caption || job.social_caption;
+        applyProposalToJob(job, res.proposal || {});
+        await sendStoryboardsToTelegram(chatId, job);
         await tgApiRequest("sendMessage", {
           chat_id: chatId,
           text: formatTelegramProposal(job),
           parse_mode: "HTML",
-          reply_markup: approvalKeyboard(activeJobId),
+          reply_markup: approvalKeyboard(activeJobId, (job.impact_moments || []).length),
         });
       } catch (e) {
         await tgApiRequest("sendMessage", {
@@ -456,14 +568,17 @@ async function handleTelegramUpdate(upd) {
   if (upd.callback_query) {
     const cb = upd.callback_query;
     const chatId = cb.message?.chat?.id;
-    const [action, jobId] = (cb.data || "").split(":");
+    const parts = (cb.data || "").split(":");
+    const action = parts[0];
+    const jobId = parts[1];
     await tgApiRequest("answerCallbackQuery", { callback_query_id: cb.id });
     if (!state.jobs.has(jobId)) return;
+    const job = state.jobs.get(jobId);
 
     if (action === "approve") {
       await triggerGeneration(jobId);
     } else if (action === "cancel") {
-      state.jobs.get(jobId).status = "cancelled";
+      job.status = "cancelled";
       await tgApiRequest("sendMessage", {
         chat_id: chatId,
         text: `🚫 Job #${jobId} cancelado.`,
@@ -472,13 +587,41 @@ async function handleTelegramUpdate(upd) {
       state.activeJobByChat.set(chatId, jobId);
       await tgApiRequest("sendMessage", {
         chat_id: chatId,
-        text: `✏️ Escribe los cambios que quieres hacerle al guion o al prompt del Job #${jobId}:`,
+        text: `✏️ Escribe los cambios de prompt, estilo o segundo de corte para el Job #${jobId}:`,
       });
+    } else if (action === "regen") {
+      const panelNum = parseInt(parts[2] || "0", 10);
+      await tgApiRequest("sendMessage", {
+        chat_id: chatId,
+        text: `🔄 Regenerando ${panelNum > 0 ? "Panel #" + panelNum : "todos los paneles"} con nueva semilla...`,
+      });
+      try {
+        const out = await runPythonCli([
+          "regenerate",
+          "--job-id",
+          jobId,
+          "--panel",
+          String(panelNum),
+        ]);
+        applyProposalToJob(job, out.proposal || {});
+        await sendStoryboardsToTelegram(chatId, job);
+        await tgApiRequest("sendMessage", {
+          chat_id: chatId,
+          text: formatTelegramProposal(job),
+          parse_mode: "HTML",
+          reply_markup: approvalKeyboard(jobId, (job.impact_moments || []).length),
+        });
+      } catch (e) {
+        await tgApiRequest("sendMessage", {
+          chat_id: chatId,
+          text: `❌ Error regenerando imagen: ${e.message}`,
+        });
+      }
     }
   }
 }
 
-// --- Servidor HTTP Ligero con soporte de Streaming MP4 ---
+// --- Servidor HTTP Ligero con soporte de Streaming MP4 e Imágenes Storyboard ---
 function readBody(req) {
   return new Promise((resolve) => {
     let data = "";
@@ -529,9 +672,12 @@ const server = http.createServer(async (req, res) => {
           state.config.gemini_api_key !== "tu_gemini_api_key_aqui",
         allowed_telegram_user_id: state.config.allowed_telegram_user_id,
         gemini_analysis_model: state.config.gemini_analysis_model,
-        veo_model: state.config.veo_model,
-        tts_provider: state.config.tts_provider,
-        edge_tts_voice: state.config.edge_tts_voice,
+        art_provider: state.config.art_provider,
+        sd_webui_url: state.config.sd_webui_url,
+        comfyui_url: state.config.comfyui_url,
+        manga_lora_tag: state.config.manga_lora_tag,
+        img2img_denoising: state.config.img2img_denoising,
+        impact_hold_seconds: state.config.impact_hold_seconds,
         default_content_style: state.config.default_content_style,
       },
     });
@@ -548,8 +694,12 @@ const server = http.createServer(async (req, res) => {
     if (body.gemini_api_key && body.gemini_api_key.trim()) {
       state.config.gemini_api_key = body.gemini_api_key.trim();
     }
-    if (body.tts_provider) state.config.tts_provider = body.tts_provider.trim();
-    if (body.edge_tts_voice) state.config.edge_tts_voice = body.edge_tts_voice.trim();
+    if (body.art_provider) state.config.art_provider = body.art_provider.trim();
+    if (body.sd_webui_url) state.config.sd_webui_url = body.sd_webui_url.trim();
+    if (body.comfyui_url) state.config.comfyui_url = body.comfyui_url.trim();
+    if (typeof body.manga_lora_tag === "string") {
+      state.config.manga_lora_tag = body.manga_lora_tag.trim();
+    }
     if (typeof body.default_content_style === "string" && body.default_content_style.trim()) {
       state.config.default_content_style = body.default_content_style.trim();
     }
@@ -564,7 +714,9 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 202, { job_id: jobId });
   }
 
-  const jobMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/(edit|refine|approve|cancel)$/);
+  const jobMatch = pathname.match(
+    /^\/api\/jobs\/([^/]+)\/(edit|refine|regenerate|approve|cancel)$/
+  );
   if (req.method === "POST" && jobMatch) {
     const [, jobId, action] = jobMatch;
     const job = state.jobs.get(jobId);
@@ -573,6 +725,7 @@ const server = http.createServer(async (req, res) => {
     if (action === "edit") {
       const b = await readBody(req);
       if (typeof b.new_title === "string") job.new_title = b.new_title;
+      if (typeof b.subjects_and_roles === "string") job.subjects_and_roles = b.subjects_and_roles;
       if (typeof b.voiceover_script === "string") job.voiceover_script = b.voiceover_script;
       if (typeof b.visual_prompt === "string") job.visual_prompt = b.visual_prompt;
       if (typeof b.social_caption === "string") job.social_caption = b.social_caption;
@@ -589,11 +742,24 @@ const server = http.createServer(async (req, res) => {
           "--feedback",
           b.feedback || "",
         ]);
-        const p = out.proposal || {};
-        job.new_title = p.new_title || job.new_title;
-        job.voiceover_script = p.voiceover_script || job.voiceover_script;
-        job.visual_prompt = p.visual_prompt || job.visual_prompt;
-        job.social_caption = p.social_caption || job.social_caption;
+        applyProposalToJob(job, out.proposal || {});
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    if (action === "regenerate") {
+      const b = await readBody(req);
+      const panelIdx = parseInt(b.panel || "0", 10);
+      const args = ["regenerate", "--job-id", jobId, "--panel", String(panelIdx)];
+      if (b.prompt) args.push("--prompt", b.prompt);
+      if (typeof b.timestamp === "number" && b.timestamp >= 0) {
+        args.push("--timestamp", String(b.timestamp));
+      }
+      try {
+        const out = await runPythonCli(args);
+        applyProposalToJob(job, out.proposal || {});
         return sendJson(res, 200, { ok: true });
       } catch (e) {
         return sendJson(res, 500, { error: e.message });
@@ -619,22 +785,30 @@ const server = http.createServer(async (req, res) => {
       return res.end("Not found");
     }
     const stat = fs.statSync(safePath);
-    const range = req.headers.range;
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
+    const ext = path.extname(safePath).toLowerCase();
+    const contentType =
+      ext === ".jpg" || ext === ".jpeg"
+        ? "image/jpeg"
+        : ext === ".png"
+        ? "image/png"
+        : "video/mp4";
+
+    if (contentType === "video/mp4" && req.headers.range) {
+      const parts = req.headers.range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
       res.writeHead(206, {
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
         "Accept-Ranges": "bytes",
         "Content-Length": end - start + 1,
-        "Content-Type": "video/mp4",
+        "Content-Type": contentType,
       });
       return fs.createReadStream(safePath, { start, end }).pipe(res);
     }
     res.writeHead(200, {
       "Content-Length": stat.size,
-      "Content-Type": "video/mp4",
+      "Content-Type": contentType,
+      "Cache-Control": "no-cache",
     });
     return fs.createReadStream(safePath).pipe(res);
   }
@@ -645,7 +819,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${PORT}`;
-  console.log(`⚡ AI Video Recreator Studio corriendo en ${url}`);
+  console.log(`🔥 AI Manga / Aura Impact Studio corriendo en ${url}`);
   if (!process.argv.includes("--no-open")) {
     spawn("cmd", ["/c", "start", "msedge", `--app=${url}`], {
       detached: true,

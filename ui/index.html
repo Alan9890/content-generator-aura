@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Video Recreator Studio</title>
+  <title>AI Manga / Aura Impact Studio</title>
   <style>
     :root {
       --bg-base: #090b10;
       --bg-panel: rgba(18, 22, 32, 0.85);
-      --bg-card: rgba(26, 32, 46, 0.75);
+      --bg-card: rgba(26, 32, 46, 0.78);
       --border: rgba(255, 255, 255, 0.08);
       --border-highlight: rgba(99, 102, 241, 0.45);
       --text-main: #f3f4f6;
@@ -29,7 +29,7 @@
 
     body {
       font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-      background: radial-gradient(circle at 15% 15%, #161b2e 0%, var(--bg-base) 65%);
+      background: radial-gradient(circle at 15% 15%, #191528 0%, var(--bg-base) 65%);
       color: var(--text-main);
       height: 100vh;
       overflow: hidden;
@@ -37,12 +37,11 @@
       flex-direction: column;
     }
 
-    /* Top Header */
     header {
       height: 62px;
       padding: 0 24px;
       border-bottom: 1px solid var(--border);
-      background: rgba(9, 11, 16, 0.85);
+      background: rgba(9, 11, 16, 0.88);
       backdrop-filter: blur(12px);
       display: flex;
       align-items: center;
@@ -63,11 +62,11 @@
       width: 34px;
       height: 34px;
       border-radius: 10px;
-      background: linear-gradient(135deg, var(--accent), var(--cyan));
+      background: linear-gradient(135deg, #ef4444, var(--accent));
       display: grid;
       place-items: center;
       font-size: 1.1rem;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
     }
 
     .header-controls {
@@ -108,7 +107,7 @@
       border: none;
       border-radius: 9px;
       padding: 9px 15px;
-      font-size: 0.85rem;
+      font-size: 0.84rem;
       font-weight: 600;
       transition: all 0.16s ease;
       display: inline-flex;
@@ -155,15 +154,13 @@
       background: rgba(239, 68, 68, 0.25);
     }
 
-    /* Main Layout */
     .workspace {
       display: grid;
-      grid-template-columns: 350px 1fr;
+      grid-template-columns: 340px 1fr;
       flex: 1;
       overflow: hidden;
     }
 
-    /* Left Sidebar */
     .sidebar {
       border-right: 1px solid var(--border);
       background: var(--bg-panel);
@@ -195,7 +192,7 @@
       padding: 10px 12px;
       color: var(--text-main);
       font-family: inherit;
-      font-size: 0.86rem;
+      font-size: 0.85rem;
       outline: none;
       transition: border-color 0.15s;
     }
@@ -281,19 +278,18 @@
       color: #fca5a5;
     }
 
-    /* Main Content Panel */
     .main-panel {
       overflow-y: auto;
-      padding: 24px 30px;
+      padding: 22px 28px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 18px;
     }
 
     .empty-state {
       margin: auto;
       text-align: center;
-      max-width: 460px;
+      max-width: 500px;
       color: var(--text-muted);
       display: flex;
       flex-direction: column;
@@ -301,22 +297,21 @@
       align-items: center;
     }
 
-    /* Stepper */
     .stepper {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
     }
     .step {
-      padding: 10px 12px;
+      padding: 9px 10px;
       border-radius: 9px;
       background: var(--bg-card);
       border: 1px solid var(--border);
-      font-size: 0.78rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .step.active {
       border-color: var(--cyan);
@@ -328,11 +323,10 @@
       color: #a7f3d0;
     }
 
-    /* Studio Grid */
     .studio-grid {
       display: grid;
-      grid-template-columns: 1fr 1.35fr;
-      gap: 20px;
+      grid-template-columns: 1fr 1.45fr;
+      gap: 18px;
       align-items: start;
     }
 
@@ -340,14 +334,14 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 18px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 13px;
     }
 
     .card h4 {
-      font-size: 0.85rem;
+      font-size: 0.83rem;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       color: var(--text-muted);
@@ -373,7 +367,7 @@
 
     .video-box-header {
       padding: 8px 12px;
-      font-size: 0.75rem;
+      font-size: 0.74rem;
       color: var(--text-muted);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -384,18 +378,59 @@
     video {
       width: 100%;
       aspect-ratio: 9 / 16;
-      max-height: 330px;
+      max-height: 310px;
       object-fit: contain;
+      background: #000;
+    }
+
+    /* Storyboard Gallery */
+    .storyboard-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .panel-card {
+      background: rgba(10, 13, 20, 0.82);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #fcd34d;
+    }
+
+    .panel-thumbs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .panel-thumbs img {
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      object-fit: cover;
+      border-radius: 7px;
+      border: 1px solid var(--border);
       background: #000;
     }
 
     .field-group {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 5px;
     }
     .field-group label {
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       color: var(--text-muted);
       font-weight: 600;
     }
@@ -409,11 +444,11 @@
       display: flex;
       gap: 10px;
       justify-content: flex-end;
-      padding-top: 6px;
+      padding-top: 8px;
       border-top: 1px solid var(--border);
+      flex-wrap: wrap;
     }
 
-    /* Modal */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -427,26 +462,26 @@
       display: grid;
     }
     .modal {
-      width: 520px;
+      width: 540px;
       max-width: 92vw;
       background: #121722;
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 24px;
+      padding: 22px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
     }
   </style>
 </head>
 <body>
   <header>
     <div class="brand">
-      <div class="brand-icon">⚡</div>
+      <div class="brand-icon">🔥</div>
       <div>
-        <div>AI Video Recreator Studio</div>
+        <div>AI Manga / Aura Impact Studio</div>
         <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 400;">
-          YouTube · Instagram · Facebook · TikTok ➔ Análisis Gemini + Veo + Telegram Auth
+          1. Ingesta ➔ 2. Timestamps & Sujetos ➔ 3. Arte Manga/Baki ➔ 4. Telegram Auth ➔ 5. FFmpeg Zoom/Shake + Phonk/SFX
         </div>
       </div>
     </div>
@@ -458,7 +493,7 @@
       </div>
       <div class="status-pill">
         <span class="dot" id="geminiDot"></span>
-        <span id="geminiStatusText">Gemini API</span>
+        <span id="geminiStatusText">Gemini + GPU Local</span>
       </div>
       <button class="btn-secondary" onclick="openSettings()">⚙️ Configuración</button>
     </div>
@@ -468,7 +503,7 @@
     <!-- Left Sidebar -->
     <aside class="sidebar">
       <div class="new-job-box">
-        <h3>➕ Nuevo Video</h3>
+        <h3>➕ 1. Ingesta de Video</h3>
         <input
           type="text"
           id="urlInput"
@@ -477,15 +512,15 @@
         <textarea
           id="styleInput"
           rows="2"
-          placeholder="Opcional: Estilo o temática (ej. Hazlo sobre bienes raíces con humor)..."
+          placeholder="Opcional: Estilo Manga/Seinen (ej. Estilo Baki Hanma tinta agresiva, aura oscura)..."
         ></textarea>
         <button class="btn-primary" id="analyzeBtn" onclick="submitNewVideo()">
-          🚀 Descargar y Analizar
+          🔥 Extraer Timestamps y Generar Arte
         </button>
       </div>
 
       <div class="queue-header">
-        <span>Cola de Trabajo (UI + Telegram)</span>
+        <span>Cola de Edits (UI + Telegram)</span>
         <span id="jobCount">0</span>
       </div>
       <div class="job-list" id="jobList"></div>
@@ -494,40 +529,42 @@
     <!-- Main Studio Panel -->
     <main class="main-panel" id="mainPanel">
       <div class="empty-state" id="emptyState">
-        <div style="font-size: 2.6rem;">🎬</div>
+        <div style="font-size: 2.6rem;">🥊</div>
         <h2 style="color: var(--text-main); font-size: 1.2rem;">
           Envía un link por Telegram o pégalo a la izquierda
         </h2>
-        <p style="font-size: 0.88rem; line-height: 1.5;">
-          El agente descargará el video, analizará su estructura ganadora con IA, y te mostrará
-          aquí (y en tu Telegram) el <b>Guion + Prompt de Video IA</b> para que lo autorices antes de generar.
+        <p style="font-size: 0.88rem; line-height: 1.55;">
+          El agente descargará el video, identificará los <b>sujetos y roles</b>, extraerá los
+          <b>timestamps de clímax</b> y generará los <b>storyboards estilo Manga Seinen / Baki</b>
+          para que los apruebes o regeneres antes del ensamblado automático con <b>Zoom/Shake + Phonk/SFX</b>.
         </p>
       </div>
 
-      <div id="jobDetailView" style="display: none; flex-direction: column; gap: 18px;">
-        <!-- Pipeline Stepper -->
+      <div id="jobDetailView" style="display: none; flex-direction: column; gap: 16px;">
+        <!-- 6-Step Pipeline Stepper -->
         <div class="stepper">
-          <div class="step" id="stepDownload">1️⃣ Descarga</div>
-          <div class="step" id="stepAnalyze">2️⃣ Análisis & Guion</div>
-          <div class="step" id="stepApproval">3️⃣ Tu Autorización</div>
-          <div class="step" id="stepGenerate">4️⃣ Generación IA</div>
-          <div class="step" id="stepDone">5️⃣ Listo</div>
+          <div class="step" id="stepDownload">1️⃣ Ingesta</div>
+          <div class="step" id="stepAnalyze">2️⃣ Análisis</div>
+          <div class="step" id="stepArt">3️⃣ Arte Manga</div>
+          <div class="step" id="stepApproval">4️⃣ Autorización</div>
+          <div class="step" id="stepGenerate">5️⃣ Ensamblado</div>
+          <div class="step" id="stepDone">6️⃣ Entregado</div>
         </div>
 
         <div id="errorBanner" style="display:none; padding:12px 16px; border-radius:10px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; font-size:0.85rem;"></div>
 
         <div class="studio-grid">
-          <!-- Left Column: Video Players & Original Analysis -->
-          <div style="display: flex; flex-direction: column; gap: 16px;">
+          <!-- Left Column: Video Players & Subjects Analysis -->
+          <div style="display: flex; flex-direction: column; gap: 14px;">
             <div class="card">
               <h4>
-                <span>🎞️ Vista Previa de Videos</span>
+                <span>🎞️ Video Original vs Aura Edit Final (9:16)</span>
                 <span id="engineBadge" style="font-size: 0.72rem; color: var(--cyan);"></span>
               </h4>
               <div class="video-grid">
                 <div class="video-box">
                   <div class="video-box-header">
-                    <span>Original Descargado</span>
+                    <span>1. Video Base</span>
                     <a id="sourceLink" href="#" target="_blank" style="color: var(--accent); text-decoration: none;">Link ↗</a>
                   </div>
                   <video id="sourceVideoPlayer" controls playsinline></video>
@@ -535,7 +572,7 @@
 
                 <div class="video-box">
                   <div class="video-box-header">
-                    <span>Nuevo Video IA</span>
+                    <span>5. Edit Final (Phonk + Impact)</span>
                     <a id="downloadFinalBtn" href="#" download style="display: none; color: var(--success); text-decoration: none; font-weight: 600;">⬇️ Descargar</a>
                   </div>
                   <video id="finalVideoPlayer" controls playsinline></video>
@@ -544,40 +581,37 @@
             </div>
 
             <div class="card">
-              <h4>🔍 Análisis del Video Original</h4>
-              <p id="originalAnalysisText" style="font-size: 0.86rem; line-height: 1.55; color: #d1d5db;"></p>
+              <h4>🥊 2. Sujetos, Roles y Análisis de Tensión</h4>
+              <div class="field-group">
+                <label>Sujetos y Roles Identificados</label>
+                <input type="text" id="editSubjects" />
+              </div>
+              <p id="originalAnalysisText" style="font-size: 0.84rem; line-height: 1.5; color: #d1d5db;"></p>
             </div>
           </div>
 
-          <!-- Right Column: Script, Visual Prompt & Approval Controls -->
+          <!-- Right Column: Manga Storyboards & Approval Controls -->
           <div class="card">
             <h4>
-              <span>✍️ Estudio de Guion y Prompt (Autorización)</span>
+              <span>🎨 3 & 4. Storyboards Manga / Baki + Timestamps de Corte</span>
               <span id="statusBadge" class="badge"></span>
             </h4>
 
             <div class="field-group">
-              <label>📌 Nuevo Título</label>
+              <label>📌 Título del Edit</label>
               <input type="text" id="editTitle" />
             </div>
 
-            <div class="field-group">
-              <label>🎙️ Guion de Voz en Off (Se convertirá en locución IA)</label>
-              <textarea id="editScript" rows="4"></textarea>
-            </div>
+            <!-- Storyboard Panels Container -->
+            <div class="storyboard-list" id="storyboardContainer"></div>
 
             <div class="field-group">
-              <label>🎨 Prompt Visual Maestro (Veo / Runway / Kling - 9:16)</label>
-              <textarea id="editPrompt" rows="4"></textarea>
-            </div>
-
-            <div class="field-group">
-              <label>✨ Pedirle ajustes a la IA (igual que en Telegram)</label>
+              <label>✨ Ajustar Timestamps o Estilo Manga con IA (y regenerar paneles)</label>
               <div class="refine-bar">
                 <input
                   type="text"
                   id="refineInput"
-                  placeholder="Ej: Haz el guion más corto y agresivo en los primeros 3 segundos..."
+                  placeholder="Ej: Agrega más aura oscura estilo Berserk y mueve el primer impacto al segundo 1.8..."
                 />
                 <button class="btn-secondary" onclick="refineWithAI()">✨ Refinar</button>
               </div>
@@ -585,17 +619,18 @@
 
             <div class="field-group">
               <label style="display:flex; justify-content:space-between;">
-                <span>📲 Copy + Hashtags (Listo para YT / IG / FB / TikTok)</span>
+                <span>📲 Copy + Hashtags</span>
                 <span style="cursor:pointer; color:var(--cyan);" onclick="copyCaption()">📋 Copiar</span>
               </label>
-              <textarea id="editCaption" rows="3"></textarea>
+              <textarea id="editCaption" rows="2"></textarea>
             </div>
 
             <div class="action-bar">
               <button class="btn-danger" onclick="cancelActiveJob()">❌ Cancelar</button>
-              <button class="btn-secondary" onclick="saveManualEdits()">💾 Guardar Cambios</button>
+              <button class="btn-secondary" onclick="regeneratePanel(0)">🔄 Regenerar Todas las Imágenes</button>
+              <button class="btn-secondary" onclick="saveManualEdits()">💾 Guardar</button>
               <button class="btn-success" id="approveBtn" onclick="approveAndGenerate()">
-                ✅ Autorizar y Generar Video IA
+                ✅ Aprobar y Ensamblar Video (Zoom/Shake + Phonk)
               </button>
             </div>
           </div>
@@ -607,7 +642,7 @@
   <!-- Settings Modal -->
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
-      <h3 style="font-size: 1.05rem;">⚙️ Configuración del Agente</h3>
+      <h3 style="font-size: 1.05rem;">⚙️ Configuración (Telegram + Gemini + GPU Local RTX 3050)</h3>
       <div class="field-group">
         <label>Token de Bot de Telegram (@BotFather)</label>
         <input type="password" id="cfgTelegramToken" placeholder="Deja vacío para conservar el actual" />
@@ -617,23 +652,35 @@
         <input type="text" id="cfgTelegramUser" placeholder="Ej. 123456789" />
       </div>
       <div class="field-group">
-        <label>Google Gemini API Key (Análisis Multimodal + Google Veo)</label>
+        <label>Google Gemini API Key (Análisis Multimodal de Timestamps y Sujetos)</label>
         <input type="password" id="cfgGeminiKey" placeholder="Deja vacío para conservar la actual" />
       </div>
       <div class="field-group">
-        <label>Motor de Voz IA (TTS)</label>
-        <select id="cfgTtsProvider">
-          <option value="edge">Edge Neural TTS (Gratis, sin API Key)</option>
-          <option value="elevenlabs">ElevenLabs API (Voz clonada / premium)</option>
+        <label>Motor de Arte Manga / Baki (Paso 3)</label>
+        <select id="cfgArtProvider">
+          <option value="auto">Automático (Prueba GPU Local A1111/ComfyUI ➔ Gemini/Flux ➔ Seinen Ink)</option>
+          <option value="a1111">Automatic1111 / SD WebUI Forge Local (127.0.0.1:7860)</option>
+          <option value="comfyui">ComfyUI Local (127.0.0.1:8188)</option>
+          <option value="gemini">Gemini Multimodal Frame-to-Manga</option>
+          <option value="flux_pollinations">Flux Schnell 9:16</option>
+          <option value="manga_ink">Motor de Entintado Seinen Local (Ultra Rápido sobre el Frame)</option>
         </select>
       </div>
       <div class="field-group">
-        <label>Voz Edge-TTS (Español)</label>
-        <input type="text" id="cfgEdgeVoice" value="es-MX-DaliaNeural" />
+        <label>URL Local Automatic1111 / Forge (--api)</label>
+        <input type="text" id="cfgSdWebuiUrl" value="http://127.0.0.1:7860" />
       </div>
       <div class="field-group">
-        <label>Estilo / Nicho por defecto</label>
-        <textarea id="cfgDefaultStyle" rows="3"></textarea>
+        <label>URL Local ComfyUI</label>
+        <input type="text" id="cfgComfyUrl" value="http://127.0.0.1:8188" />
+      </div>
+      <div class="field-group">
+        <label>Tag de LoRA Manga / Baki (para A1111 / Forge)</label>
+        <input type="text" id="cfgMangaLora" value="<lora:baki_manga_style:0.85>" />
+      </div>
+      <div class="field-group">
+        <label>Estilo Manga / Seinen por defecto</label>
+        <textarea id="cfgDefaultStyle" rows="2"></textarea>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
         <button class="btn-secondary" onclick="closeSettings()">Cerrar</button>
@@ -648,11 +695,11 @@
     let isEditingFields = false;
 
     const STATUS_LABELS = {
-      downloading: "⬇️ Descargando",
-      analyzing: "🧠 Analizando IA",
-      awaiting_approval: "⏳ Por Autorizar",
-      generating: "🎬 Renderizando",
-      completed: "✅ Completado",
+      downloading: "⬇️ 1. Ingesta",
+      analyzing: "🧠 2-3. Timestamps & Arte",
+      awaiting_approval: "⏳ 4. Autorizar Storyboard",
+      generating: "🎬 5. Ensamblando FFmpeg",
+      completed: "✅ 6. Entregado",
       error: "❌ Error",
       cancelled: "🚫 Cancelado"
     };
@@ -692,7 +739,7 @@
       const gemText = document.getElementById("geminiStatusText");
       if (stateData.config.has_gemini_key) {
         gemDot.className = "dot online";
-        gemText.textContent = "Gemini + Veo: Activo";
+        gemText.textContent = `Arte: ${stateData.config.art_provider || 'auto'}`;
       } else {
         gemDot.className = "dot warn";
         gemText.textContent = "Gemini: Falta API Key";
@@ -743,12 +790,12 @@
 
       document.getElementById("sourceLink").href = job.url;
       document.getElementById("originalAnalysisText").textContent =
-        job.original_analysis || "Analizando estructura narrativa, gancho y ritmo del video...";
+        job.original_analysis || "Extrayendo momentos de clímax, tensión y roles de los sujetos...";
 
       document.getElementById("engineBadge").textContent = job.engine_used || "";
 
       const srcPlayer = document.getElementById("sourceVideoPlayer");
-      if (job.source_video_url && !srcPlayer.src.endsWith(job.source_video_url)) {
+      if (job.source_video_url && !srcPlayer.src.includes(job.source_video_url)) {
         srcPlayer.src = job.source_video_url;
       } else if (!job.source_video_url) {
         srcPlayer.removeAttribute("src");
@@ -757,7 +804,7 @@
       const finalPlayer = document.getElementById("finalVideoPlayer");
       const dlBtn = document.getElementById("downloadFinalBtn");
       if (job.final_video_url) {
-        if (!finalPlayer.src.endsWith(job.final_video_url)) {
+        if (!finalPlayer.src.includes(job.final_video_url)) {
           finalPlayer.src = job.final_video_url;
         }
         dlBtn.style.display = "inline";
@@ -769,13 +816,51 @@
 
       if (forcePopulate || !isEditingFields) {
         document.getElementById("editTitle").value = job.new_title || "";
-        document.getElementById("editScript").value = job.voiceover_script || "";
-        document.getElementById("editPrompt").value = job.visual_prompt || "";
+        document.getElementById("editSubjects").value = job.subjects_and_roles || "";
         document.getElementById("editCaption").value = job.social_caption || "";
+        renderStoryboardCards(job.impact_moments || []);
       }
     }
 
-    ["editTitle", "editScript", "editPrompt", "editCaption"].forEach(id => {
+    function renderStoryboardCards(moments) {
+      const container = document.getElementById("storyboardContainer");
+      if (!moments || moments.length === 0) {
+        container.innerHTML = `<div style="color:var(--text-muted); font-size:0.84rem; padding:12px;">Generando paneles de impacto Manga/Baki...</div>`;
+        return;
+      }
+      container.innerHTML = moments.map(m => `
+        <div class="panel-card">
+          <div class="panel-header">
+            <span>⚡ Panel #${m.index} [${escapeHtml(m.timestamp_label || '')}]</span>
+            <span style="font-size:0.68rem; color:var(--cyan);">${escapeHtml(m.art_engine || 'Manga')}</span>
+          </div>
+          <div style="font-size:0.78rem; font-weight:600; color:#e5e7eb;">${escapeHtml(m.moment_title || '')}</div>
+          <div class="panel-thumbs">
+            <div>
+              <div style="font-size:0.66rem; color:var(--text-muted); margin-bottom:2px;">Frame Real (${m.timestamp_sec}s)</div>
+              <img src="${m.source_frame_url || ''}" alt="Frame" />
+            </div>
+            <div>
+              <div style="font-size:0.66rem; color:#fcd34d; margin-bottom:2px;">Arte Manga/Baki</div>
+              <img src="${m.storyboard_url || ''}" alt="Manga Panel" />
+            </div>
+          </div>
+          <div class="field-group">
+            <label>Segundo de corte (Timestamp)</label>
+            <input type="number" step="0.1" id="panelTs_${m.index}" value="${m.timestamp_sec}" onchange="isEditingFields=true" />
+          </div>
+          <div class="field-group">
+            <label>Prompt Manga / Baki</label>
+            <textarea rows="2" id="panelPrompt_${m.index}" oninput="isEditingFields=true">${escapeHtml(m.manga_prompt || '')}</textarea>
+          </div>
+          <button class="btn-secondary" style="width:100%; padding:7px;" onclick="regeneratePanel(${m.index})">
+            🔄 Regenerar Imagen #${m.index}
+          </button>
+        </div>
+      `).join("");
+    }
+
+    ["editTitle", "editSubjects", "editCaption"].forEach(id => {
       document.addEventListener("DOMContentLoaded", () => {
         const el = document.getElementById(id);
         if (el) el.addEventListener("input", () => { isEditingFields = true; });
@@ -783,20 +868,23 @@
     });
 
     function updateStepper(status) {
-      const steps = ["stepDownload", "stepAnalyze", "stepApproval", "stepGenerate", "stepDone"];
+      const steps = ["stepDownload", "stepAnalyze", "stepArt", "stepApproval", "stepGenerate", "stepDone"];
       steps.forEach(s => document.getElementById(s).className = "step");
       if (status === "downloading") {
         document.getElementById("stepDownload").className = "step active";
       } else if (status === "analyzing") {
         document.getElementById("stepDownload").className = "step done";
         document.getElementById("stepAnalyze").className = "step active";
+        document.getElementById("stepArt").className = "step active";
       } else if (status === "awaiting_approval") {
         document.getElementById("stepDownload").className = "step done";
         document.getElementById("stepAnalyze").className = "step done";
+        document.getElementById("stepArt").className = "step done";
         document.getElementById("stepApproval").className = "step active";
       } else if (status === "generating") {
         document.getElementById("stepDownload").className = "step done";
         document.getElementById("stepAnalyze").className = "step done";
+        document.getElementById("stepArt").className = "step done";
         document.getElementById("stepApproval").className = "step done";
         document.getElementById("stepGenerate").className = "step active";
       } else if (status === "completed") {
@@ -822,6 +910,24 @@
       }
     }
 
+    async function regeneratePanel(panelIdx) {
+      if (!selectedJobId) return;
+      const payload = { panel: panelIdx };
+      if (panelIdx > 0) {
+        const tsEl = document.getElementById(`panelTs_${panelIdx}`);
+        const prEl = document.getElementById(`panelPrompt_${panelIdx}`);
+        if (tsEl) payload.timestamp = parseFloat(tsEl.value);
+        if (prEl) payload.prompt = prEl.value;
+      }
+      await fetch(`/api/jobs/${selectedJobId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      isEditingFields = false;
+      await fetchState();
+    }
+
     async function saveManualEdits() {
       if (!selectedJobId) return;
       await fetch(`/api/jobs/${selectedJobId}/edit`, {
@@ -829,8 +935,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           new_title: document.getElementById("editTitle").value,
-          voiceover_script: document.getElementById("editScript").value,
-          visual_prompt: document.getElementById("editPrompt").value,
+          subjects_and_roles: document.getElementById("editSubjects").value,
           social_caption: document.getElementById("editCaption").value
         })
       });
@@ -842,7 +947,7 @@
       if (!selectedJobId) return;
       const feedback = document.getElementById("refineInput").value.trim();
       if (!feedback) return;
-      document.getElementById("refineInput").value = "Refinando con Gemini...";
+      document.getElementById("refineInput").value = "Refinando timestamps y regenerando paneles...";
       await fetch(`/api/jobs/${selectedJobId}/refine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -874,8 +979,10 @@
     function openSettings() {
       const cfg = stateData.config || {};
       document.getElementById("cfgTelegramUser").value = cfg.allowed_telegram_user_id || "";
-      document.getElementById("cfgTtsProvider").value = cfg.tts_provider || "edge";
-      document.getElementById("cfgEdgeVoice").value = cfg.edge_tts_voice || "es-MX-DaliaNeural";
+      document.getElementById("cfgArtProvider").value = cfg.art_provider || "auto";
+      document.getElementById("cfgSdWebuiUrl").value = cfg.sd_webui_url || "http://127.0.0.1:7860";
+      document.getElementById("cfgComfyUrl").value = cfg.comfyui_url || "http://127.0.0.1:8188";
+      document.getElementById("cfgMangaLora").value = cfg.manga_lora_tag || "<lora:baki_manga_style:0.85>";
       document.getElementById("cfgDefaultStyle").value = cfg.default_content_style || "";
       document.getElementById("settingsModal").classList.add("open");
     }
@@ -892,8 +999,10 @@
           telegram_bot_token: document.getElementById("cfgTelegramToken").value,
           allowed_telegram_user_id: document.getElementById("cfgTelegramUser").value,
           gemini_api_key: document.getElementById("cfgGeminiKey").value,
-          tts_provider: document.getElementById("cfgTtsProvider").value,
-          edge_tts_voice: document.getElementById("cfgEdgeVoice").value,
+          art_provider: document.getElementById("cfgArtProvider").value,
+          sd_webui_url: document.getElementById("cfgSdWebuiUrl").value,
+          comfyui_url: document.getElementById("cfgComfyUrl").value,
+          manga_lora_tag: document.getElementById("cfgMangaLora").value,
           default_content_style: document.getElementById("cfgDefaultStyle").value
         })
       });
@@ -903,10 +1012,12 @@
       await fetchState();
     }
 
-    function escapeHtml(s) {
-      return String(s || "").replace(/[&<>"']/g, m => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-      }[m]));
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
 
     fetchState();

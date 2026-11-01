@@ -1,33 +1,32 @@
 ---
-name: video-recreator
-description: Descarga videos de YouTube, Instagram, Facebook o TikTok, los analiza con Gemini para proponer un nuevo guion y prompt visual, solicita autorización del usuario en Telegram y genera el nuevo video con IA.
+name: video-recreator-aura
+description: Pipeline de 6 pasos para crear edits verticales 9:16 estilo Manga/Seinen/Baki con cortes en timestamps clave, paneles de arte IA con zoom/shake y montaje de Phonk + SFX con autorización en Telegram.
 ---
 
-# Video Recreator Skill (OpenClaw / Hermes / Antigravity)
+# Aura / Manga Impact Video Editor Skill
 
-Usa este skill cuando el usuario envíe un enlace de **YouTube, Instagram, Facebook o TikTok** y quiera recrear el video con IA bajo su autorización.
+## Flujo de 6 Pasos con Autorización Humana (Human-in-the-Loop)
 
-## Flujo obligatorio con autorización humana (Human-in-the-Loop)
-
-1. **Descargar y Analizar (NO generar aún)**:
-   Ejecuta el comando `analyze` pasando la URL y el estilo deseado por el usuario:
+1. **Pasos 1, 2 y 3 — Ingesta, Análisis Multimodal y Generación de Storyboards**:
    ```bash
-   python cli.py analyze --url "<URL>" --style "<ESTILO_DEL_USUARIO>"
+   python cli.py analyze --url "<URL>" --style "<ESTILO_MANGA_OPCIONAL>"
    ```
-2. **Presentar propuesta y pedir autorización en Telegram**:
-   Muestra al usuario el JSON devuelto:
-   - `original_analysis` (análisis del video original)
-   - `new_title` (nuevo título)
-   - `voiceover_script` (guion de voz en off propuesto)
-   - `visual_prompt` (prompt para el generador de video IA)
-   - `social_caption` (copy y hashtags)
-   **DETENTE AQUÍ** y pregunta al usuario si aprueba la propuesta o si desea modificar el guion o el prompt.
+   Esto descarga el video, identifica sujetos/roles (`subjects_and_roles`), extrae los timestamps de clímax (`impact_moments`) y genera las imágenes estilo Manga/Baki en `workspace/storyboards/`.
 
-3. **Generar el video (SOLO tras la aprobación explícita del usuario)**:
-   Cuando el usuario responda que aprueba, ejecuta:
+2. **Paso 4 — Presentar Storyboards y pedir autorización**:
+   Muestra al usuario las imágenes generadas, los timestamps y los sujetos detectados.
+   - Si el usuario pide **regenerar una imagen** (ej. el panel 1 o todas):
+     ```bash
+     python cli.py regenerate --job-id "<JOB_ID>" --panel 1
+     ```
+   - Si pide cambios de estilo o tiempos:
+     ```bash
+     python cli.py refine --job-id "<JOB_ID>" --feedback "<CAMBIOS>"
+     ```
+
+3. **Pasos 5 y 6 — Ensamblado Automático FFmpeg y Entrega**:
+   Al aprobar el usuario, ejecuta:
    ```bash
    python cli.py generate --job-id "<JOB_ID>"
    ```
-   (Si el usuario pidió cambios al guion o prompt, pásalos en `--script "..."` y `--prompt "..."`).
-4. **Entregar el archivo final**:
-   Envía el archivo MP4 (`final_video_path`) al chat de Telegram junto con `social_caption` para que el usuario lo publique manualmente en sus redes.
+   Esto corta el video en los timestamps clave, inserta los paneles Manga con efecto Flash + Zoom Punch + Camera Shake, sincroniza el audio Phonk + SFX de golpe y exporta el `.mp4` final en 9:16.

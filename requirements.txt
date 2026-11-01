@@ -2,6 +2,6 @@ python-telegram-bot>=21.0
 yt-dlp>=2025.1.15
 google-genai>=1.0.0
 python-dotenv>=1.0.1
-edge-tts>=6.1.12
 requests>=2.31.0
 imageio-ffmpeg>=0.5.1
+Pillow>=10.0.0
